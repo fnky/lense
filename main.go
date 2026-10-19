@@ -385,7 +385,10 @@ func (s *shell) openDetail(id string) {
 		Page:      mygo.PageOptions{DevTools: mygo.DevToolsDisabled},
 	})
 	s.details[id] = w
-	w.OnClosed(func() { delete(s.details, id) })
+	w.OnClosed(func() {
+		delete(s.details, id)
+		delete(a.windowBands, id)
+	})
 	s.hide()
 	w.Focus()
 }
@@ -510,7 +513,10 @@ func (m *macSystem) pageURL(ctx context.Context, browser macos.App) string {
 	return u
 }
 
-func (m *macSystem) drag(p dragPhase)     { m.s.drag(p) }
+func (m *macSystem) drag(p dragPhase) { m.s.drag(p) }
+func (m *macSystem) scrollPhase() (phase, momentum macos.Phase) {
+	return macos.ScrollPhase()
+}
 func (m *macSystem) show()                { mygo.RunOnMain(m.s.show) }
 func (m *macSystem) hide()                { mygo.RunOnMain(m.s.hide) }
 func (m *macSystem) openDetail(id string) { mygo.RunOnMain(func() { m.s.openDetail(id) }) }

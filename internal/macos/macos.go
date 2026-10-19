@@ -18,6 +18,18 @@ const (
 	FieldPassword
 )
 
+// Phase is where a gesture on the trackpad is, as AppKit's NSEventPhase.
+type Phase uint
+
+const (
+	PhaseBegan      Phase = 1
+	PhaseStationary Phase = 2
+	PhaseChanged    Phase = 4
+	PhaseEnded      Phase = 8
+	PhaseCancelled  Phase = 16
+	PhaseMayBegin   Phase = 32
+)
+
 var (
 	// ErrCanceled means the user, or the system, canceled Touch ID.
 	ErrCanceled = errors.New("Touch ID was canceled")

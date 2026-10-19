@@ -29,6 +29,7 @@ func RoundMaterial(nsWindow uintptr, radius float64) {}
 func TypeText(text string)                           {}
 func CopySecret(text string, concealed bool) int     { return -1 }
 func ClearIfUnchanged(count int) bool                { return false }
+func ScrollPhase() (phase, momentum Phase)           { return 0, 0 }
 func BrowserURL(ctx context.Context, bundleID string) (string, error) {
 	return "", errors.ErrUnsupported
 }

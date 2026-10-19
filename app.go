@@ -60,6 +60,9 @@ type system interface {
 	// drag moves the window as the user drags it, snapping it to the
 	// guides it shows.
 	drag(phase dragPhase)
+	// scrollPhase returns the phases of the trackpad's gesture scrolling a
+	// view, as the view takes its event (macos.ScrollPhase).
+	scrollPhase() (phase, momentum macos.Phase)
 }
 
 // fillRequest is a login to type into another app.
@@ -190,6 +193,16 @@ type app struct {
 	confirmPw   string
 	confirmErr  string
 	confirmH    ui.Handle
+
+	// The rubber bands of the scroll views: the items', which listOff
+	// moves the rows by in this frame, the details', of the details in
+	// windows of their own by item, the settings' and the vaults'.
+	listBand     band
+	listOff      float32
+	detailBand   band
+	windowBands  map[string]*band
+	settingsBand band
+	vaultBand    band
 
 	// holdOpen keeps the window open as it loses the focus: to Touch ID,
 	// or the desktop app's prompt. refocus gives it the keyboard back.

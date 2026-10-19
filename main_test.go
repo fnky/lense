@@ -73,6 +73,8 @@ type fakeSystem struct {
 	field    bool // a text field has the focus in the app the user was in
 	drags    []dragPhase
 	pageURLs map[string]string
+	// phase and momentum are those of the scrolling, none by default.
+	phase, momentum macos.Phase
 }
 
 func (s *fakeSystem) copy(text string, secret bool) {
@@ -100,6 +102,7 @@ func (s *fakeSystem) fill(_ context.Context, _ macos.App, req fillRequest) error
 func (s *fakeSystem) pageURL(_ context.Context, b macos.App) string { return s.pageURLs[b.BundleID] }
 func (s *fakeSystem) fieldFocused(macos.App) bool                   { return s.field }
 func (s *fakeSystem) drag(p dragPhase)                              { s.drags = append(s.drags, p) }
+func (s *fakeSystem) scrollPhase() (macos.Phase, macos.Phase)       { return s.phase, s.momentum }
 
 func (s *fakeSystem) last() string {
 	if len(s.copied) == 0 {
@@ -1055,12 +1058,37 @@ func TestRowsFadeUnderThePinnedHeader(t *testing.T) {
 	}
 	// Right of the label, down to the header's bottom, the material shows
 	// alone.
-	img, s := h.tt.Image(), float32(2)
-	for y := int(label.Y * s); y < int((label.Y+label.H+4)*s); y++ {
-		for x := int((label.X + label.W + 8) * s); x < int((label.X+label.W+180)*s); x++ {
-			if _, _, _, a := img.At(x, y).RGBA(); a > 0x800 {
-				t.Fatalf("a row shows under the header at %d, %d: alpha %d", x, y, a>>8)
+	clear := func() {
+		t.Helper()
+		img, s := h.tt.Image(), float32(2)
+		for y := int(label.Y * s); y < int((label.Y+label.H+4)*s); y++ {
+			for x := int((label.X + label.W + 8) * s); x < int((label.X+label.W+180)*s); x++ {
+				if _, _, _, a := img.At(x, y).RGBA(); a > 0x800 {
+					t.Fatalf("a row shows under the header at %d, %d: alpha %d", x, y, a>>8)
+				}
 			}
 		}
 	}
+	clear()
+	// Stretched past the end, the rows go up under the header, which
+	// stays.
+	for range 20 {
+		h.tt.Scroll(150, 300, 0, 200)
+	}
+	h.settle()
+	for range 4 {
+		if !h.a.stretch(&h.a.listBand, pull(30, h.tt.Now())) {
+			t.Fatal("the list scrolled past its end")
+		}
+		h.tt.Advance(8 * time.Millisecond)
+	}
+	h.tt.Frame()
+	if h.a.listOff > -40 {
+		t.Fatalf("stretched by %v", h.a.listOff)
+	}
+	snapshot(t, h.tt, "pinned-header-stretched")
+	if r, _ := h.tt.Find("ALL ITEMS"); r != label {
+		t.Fatalf("the header moved from %v to %v", label, r)
+	}
+	clear()
 }

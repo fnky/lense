@@ -28,7 +28,9 @@ func (a *app) itemsView(c *ui.Context, k ink) {
 		a.header(c, k)
 		// The list and the details go down to the window's bottom, and
 		// scroll under the footer, which floats over them.
-		ui.Box(c.Key("body")).Grow(1).MinHeight(0).Children(func() {
+		body := ui.Box(c.Key("body")).Grow(1).MinHeight(0)
+		a.listOff = a.listBand.offset(c, body)
+		body.Children(func() {
 			ui.Row(c).Fill().AlignItems(ui.Stretch).Children(func() {
 				a.itemList(c, k)
 				ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Children(func() {
@@ -123,10 +125,14 @@ func (a *app) vaultMenu(c *ui.Context, k ink) {
 		Padding(6).Radius(12).Background(k.raised).Border(1, k.line).Shadow(0, 10, 30, 0, ui.RGBA(0, 0, 0, 0.25)).
 		Label("Vaults")
 	panel.Children(func() {
-		ui.Scroll(c.Key("vault-scroll")).Gap(1).Children(func() {
-			for _, v := range a.visibleVaults() {
-				a.vaultRow(c.Key("v:"+v.id), k, v)
-			}
+		view := a.stretchy(ui.Scroll(c.Key("vault-scroll")), &a.vaultBand)
+		off := a.vaultBand.offset(c, view)
+		view.Children(func() {
+			ui.Column(c).Gap(1).Translate(0, off).Children(func() {
+				for _, v := range a.visibleVaults() {
+					a.vaultRow(c.Key("v:"+v.id), k, v)
+				}
+			})
 		})
 	})
 }
@@ -176,6 +182,7 @@ func (a *app) itemList(c *ui.Context, k ink) {
 	list := ui.List(c.Key("items"), &a.list, len(a.rows), func(i int) { a.rowView(c, k, i) }).
 		Width(listWidth).Shrink(0).Padding(headerFade, 8, 6+footerHeight, 8).ScrollbarInsets(0, 0, footerHeight, 0).
 		Background(k.pane).BorderWidth(0, 1, 0, 0).BorderColor(k.line).Label("Items")
+	a.stretchy(list, &a.listBand)
 	list.Children(func() {
 		if len(a.rows) > 0 {
 			return
@@ -206,6 +213,11 @@ func (a *app) rowView(c *ui.Context, k ink, i int) {
 		// window's material, where it has none, by the rows fading out
 		// under it (underHeader).
 		head := ui.Row(c).Height(sectionHeight).Padding(10, 10, 4, 10)
+		// Stretched past the end, the rows move up under the header pinned
+		// over them, which stays.
+		if a.listOff >= 0 || i != a.pinnedHeader() {
+			head.Translate(0, a.listOff)
+		}
 		if !k.vibrant {
 			head.Background(k.pane)
 		}
@@ -216,9 +228,9 @@ func (a *app) rowView(c *ui.Context, k ink, i int) {
 	}
 	// The rows take the pointer, not the keyboard, which the search keeps.
 	chosen := i == a.sel
-	b := ui.Row(c).Padding(7, 10).Gap(10).Radius(8).AlignItems(ui.Center).Selected(chosen)
+	b := ui.Row(c).Padding(7, 10).Gap(10).Radius(8).AlignItems(ui.Center).Selected(chosen).Translate(0, a.listOff)
 	if k.vibrant && a.rows[0].header != "" {
-		b.Effect(underHeader{})
+		b.Effect(underHeader{dy: a.listOff})
 	}
 	inDetails := chosen && a.mode == modeDetails
 	switch {
@@ -268,14 +280,26 @@ func (a *app) rowView(c *ui.Context, k ink, i int) {
 	})
 }
 
+// pinnedHeader returns the row of the header pinned over the list's top in
+// the frame before, the section's of the first row showing: -1 for none.
+func (a *app) pinnedHeader() int {
+	first, _ := a.list.Visible()
+	for h := min(first, len(a.rows)-1); h >= 0; h-- {
+		if a.rows[h].header != "" {
+			return h
+		}
+	}
+	return -1
+}
+
 // sectionHeight is the height of a section's header in the list.
 const sectionHeight = 28
 
 // underHeader fades a row of the list out as it scrolls under the header
 // pinned at the list's top: wholly under the header, and over headerFade
 // DIPs below it. The list clips the row to its box, whose top the header
-// pins to.
-type underHeader struct{}
+// pins to; dy moves the row off its place (band).
+type underHeader struct{ dy float32 }
 
 // headerFade is the list's top padding, by which the first rows are below
 // the first header: they show wholly until they scroll.
@@ -295,8 +319,8 @@ func ColorEffect(pos vec2, color vec4) vec4 {
 
 func (underHeader) EffectMargin() ui.Point { return ui.Point{} }
 
-func (underHeader) PaintEffect(p *ui.Painter, box ui.Rect, content *ui.Bitmap, inset ui.Point) {
-	cut := p.Visible().Y + sectionHeight - box.Y
+func (u underHeader) PaintEffect(p *ui.Painter, box ui.Rect, content *ui.Bitmap, inset ui.Point) {
+	cut := p.Visible().Y + sectionHeight - box.Y - u.dy
 	fx := fadeUnder.Effect(shader.Options{Uniforms: map[string]any{"Cut": cut, "Fade": float32(headerFade)}})
 	fx.PaintEffect(p, box, content, inset)
 }
@@ -418,58 +442,81 @@ func (a *app) details(c *ui.Context, k ink, it *bw.Item, own bool) {
 	if !own {
 		bottom += footerHeight // under the footer
 	}
-	ui.Scroll(c.Key("detail-"+it.ID)).Fill().Padding(18, 18, bottom, 18).ScrollbarInsets(0, 0, bottom-16, 0).Gap(16).Children(func() {
-		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-			avatar(c, k, it.Name, int(it.Type), 44)
-			ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(3).Children(func() {
-				ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-					ui.Text(c, it.Name).FontSize(17).FontWeight(650).SingleLine().Shrink(1)
-					if it.Favorite {
-						ui.Icon(c, iconStar).FontSize(13).TextColor(k.warn)
-					}
-				})
-				ui.Text(c, a.where(it)).FontSize(12).TextColor(k.muted).SingleLine()
-			})
-			if !own {
-				iconButton(c.Key("window"), k, iconExternal, "Open in Window ("+a.cfg.keyHint("open-window")+")").
-					OnClick(func() { a.sys.openDetail(it.ID) })
-			}
-		})
-		if it.Err != nil {
-			problemBox(c.Key("err"), k, &problem{title: "Part of this item can't be decrypted", detail: it.Err.Error()})
-		}
-		fields := a.fieldsOf(it)
-		if len(fields) > 0 {
-			group(c.Key("fields"), k, func() {
-				for i, f := range fields {
-					focused := !own && a.mode == modeDetails && a.fieldSel == i
-					key := fieldKey(it.ID, i)
-					a.fieldRow(c.Key(i), k, it, f, key, peek || a.reveal[key], i > 0, focused)
-				}
-			})
-		}
-		if l := it.Login; l != nil && len(l.Passkeys) > 0 {
-			group(c.Key("passkeys"), k, func() {
-				for i, p := range l.Passkeys {
-					ui.Row(c.Key(i)).Padding(10, 12).Gap(10).AlignItems(ui.Center).Children(func() {
-						ui.Icon(c, iconPasskey).FontSize(16).TextColor(k.accent)
-						ui.Column(c).Gap(1).Grow(1).Children(func() {
-							ui.Text(c, "passkey").FontSize(11).TextColor(k.muted)
-							name := p.RpID
-							if p.UserName != "" {
-								name = p.UserName + " · " + p.RpID
-							}
-							ui.Text(c, name).SingleLine()
-						})
-						if !p.Created.IsZero() {
-							ui.Text(c, "Created "+p.Created.Format("Jan 2, 2006")).FontSize(11).TextColor(k.faint)
+	b := &a.detailBand
+	if own {
+		b = a.windowBand(it.ID)
+	}
+	b.show(it.ID)
+	view := a.stretchy(ui.Scroll(c.Key("detail-"+it.ID)).Fill().ScrollbarInsets(0, 0, bottom-16, 0), b)
+	off := b.offset(c, view)
+	view.Children(func() {
+		ui.Column(c).Padding(18, 18, bottom, 18).Gap(16).Translate(0, off).Children(func() {
+			ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
+				avatar(c, k, it.Name, int(it.Type), 44)
+				ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(3).Children(func() {
+					ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+						ui.Text(c, it.Name).FontSize(17).FontWeight(650).SingleLine().Shrink(1)
+						if it.Favorite {
+							ui.Icon(c, iconStar).FontSize(13).TextColor(k.warn)
 						}
 					})
+					ui.Text(c, a.where(it)).FontSize(12).TextColor(k.muted).SingleLine()
+				})
+				if !own {
+					iconButton(c.Key("window"), k, iconExternal, "Open in Window ("+a.cfg.keyHint("open-window")+")").
+						OnClick(func() { a.sys.openDetail(it.ID) })
 				}
 			})
-		}
-		ui.Text(c, "Modified "+it.Revised.Local().Format("January 2, 2006 at 15:04")).FontSize(11).TextColor(k.faint).AlignSelf(ui.Center)
+			if it.Err != nil {
+				problemBox(c.Key("err"), k, &problem{title: "Part of this item can't be decrypted", detail: it.Err.Error()})
+			}
+			fields := a.fieldsOf(it)
+			if len(fields) > 0 {
+				group(c.Key("fields"), k, func() {
+					for i, f := range fields {
+						focused := !own && a.mode == modeDetails && a.fieldSel == i
+						key := fieldKey(it.ID, i)
+						a.fieldRow(c.Key(i), k, it, f, key, peek || a.reveal[key], i > 0, focused)
+					}
+				})
+			}
+			if l := it.Login; l != nil && len(l.Passkeys) > 0 {
+				group(c.Key("passkeys"), k, func() {
+					for i, p := range l.Passkeys {
+						ui.Row(c.Key(i)).Padding(10, 12).Gap(10).AlignItems(ui.Center).Children(func() {
+							ui.Icon(c, iconPasskey).FontSize(16).TextColor(k.accent)
+							ui.Column(c).Gap(1).Grow(1).Children(func() {
+								ui.Text(c, "passkey").FontSize(11).TextColor(k.muted)
+								name := p.RpID
+								if p.UserName != "" {
+									name = p.UserName + " · " + p.RpID
+								}
+								ui.Text(c, name).SingleLine()
+							})
+							if !p.Created.IsZero() {
+								ui.Text(c, "Created "+p.Created.Format("Jan 2, 2006")).FontSize(11).TextColor(k.faint)
+							}
+						})
+					}
+				})
+			}
+			ui.Text(c, "Modified "+it.Revised.Local().Format("January 2, 2006 at 15:04")).FontSize(11).TextColor(k.faint).AlignSelf(ui.Center)
+		})
 	})
+}
+
+// windowBand is the rubber band of the details of item id in a window of
+// their own.
+func (a *app) windowBand(id string) *band {
+	if a.windowBands == nil {
+		a.windowBands = map[string]*band{}
+	}
+	b := a.windowBands[id]
+	if b == nil {
+		b = &band{}
+		a.windowBands[id] = b
+	}
+	return b
 }
 
 // where says what an item is and where it is kept.

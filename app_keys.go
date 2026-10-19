@@ -151,6 +151,9 @@ func (a *app) setMode(m mode) {
 		a.reveal = map[string]bool{}
 		a.large = nil
 	}
+	if m == modeVaults && a.mode != modeVaults {
+		a.vaultBand = band{} // the selector opens at its top
+	}
 	a.mode = m
 }
 

@@ -93,6 +93,9 @@ func (a *app) keyChip(c *ui.Context, k ink, act action, i int, label string) {
 		a.recordID, a.recordIndex, a.keyErr = act.id, i, ""
 	})
 	b.HandleInput(func(ev ui.InputEvent) bool {
+		if ev.Kind == ui.InputScroll {
+			return a.stretch(&a.settingsBand, ev) // its handler's, which this one comes before
+		}
 		if !recording || ev.Kind != ui.InputKeyDown {
 			return false
 		}

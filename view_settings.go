@@ -20,95 +20,99 @@ func (a *app) settingsView(c *ui.Context, k ink) {
 		}
 		ui.Text(c, "Settings").FontSize(14).FontWeight(650).Grow(1).TextAlign(ui.Center).Margin(0, 60, 0, 0)
 	})
-	ui.Scroll(c.Key("settings")).Grow(1).Padding(18, 28, 22, 28).Gap(22).Children(func() {
-		section(c, k, "Account", func() {
-			settingRow(c, k, a.cfg.Email, a.accountStatus(), func() {
-				ui.Button(c.Key("change"), "Change…").OnClick(a.startSetup)
-			})
-			if a.vault != nil {
-				settingRow(c, k, "Lock now", "Forgets the vault until you unlock it again.", func() {
-					ui.Button(c.Key("lock"), "Lock").OnClick(func() { a.lock(true); a.page = pageItems })
+	view := a.stretchy(ui.Scroll(c.Key("settings")).Grow(1), &a.settingsBand)
+	off := a.settingsBand.offset(c, view)
+	view.Children(func() {
+		ui.Column(c).Padding(18, 28, 22, 28).Gap(22).Translate(0, off).Children(func() {
+			section(c, k, "Account", func() {
+				settingRow(c, k, a.cfg.Email, a.accountStatus(), func() {
+					ui.Button(c.Key("change"), "Change…").OnClick(a.startSetup)
 				})
-			}
-		})
-		section(c, k, "Security", func() {
-			minutes := []int{0, 1, 5, 10, 15, 30, 60, 240}
-			labels := []string{"Never", "After 1 minute", "After 5 minutes", "After 10 minutes", "After 15 minutes", "After 30 minutes", "After 1 hour", "After 4 hours"}
-			sel := labels[max(0, slices.Index(minutes, a.cfg.AutoLock))]
-			settingRow(c, k, "Lock when idle", "When the Mac has had no input for this long.", func() {
-				ui.Select(c.Key("autolock"), &sel, labels).Width(170).OnChange(func() {
-					a.cfg.AutoLock = minutes[slices.Index(labels, sel)]
-					a.changed()
-				})
-			})
-			switchRow(c.Key("sleep"), k, "Lock when the Mac sleeps", "Or when its screen locks.", &a.cfg.LockOnSleep, a.changed)
-			detail := "After Bitwarden Mini locks itself, your fingerprint unlocks it until it quits."
-			if !a.sys.biometrics() {
-				detail = "This Mac has no Touch ID set up."
-			}
-			switchRow(c.Key("touch"), k, "Unlock with Touch ID", detail, &a.cfg.TouchID, a.changed)
-		})
-		section(c, k, "Appearance", func() {
-			var labels []string
-			sel := materials[0].label
-			for _, m := range materials {
-				labels = append(labels, m.label)
-				if m.id == a.cfg.Material {
-					sel = m.label
-				}
-			}
-			settingRow(c, k, "Window material", "What shows through behind the window, blurred, as macOS's own panels do. Solid shows none.", func() {
-				ui.Select(c.Key("material"), &sel, labels).Width(170).OnChange(func() {
-					for _, m := range materials {
-						if m.label == sel {
-							a.cfg.Material = m.id
-						}
-					}
-					a.changed()
-					a.applyMaterial()
-				})
-			})
-		})
-		section(c, k, "Clipboard", func() {
-			secs := []int{0, 30, 60, 90, 120, 300}
-			labels := []string{"Never", "After 30 seconds", "After 1 minute", "After 90 seconds", "After 2 minutes", "After 5 minutes"}
-			i := slices.Index(secs, a.cfg.ClearClipboard)
-			if i < 0 {
-				i = 3
-			}
-			sel := labels[i]
-			settingRow(c, k, "Clear copied secrets", "Passwords and codes leave the clipboard, unless you copied something else since.", func() {
-				ui.Select(c.Key("clear"), &sel, labels).Width(170).OnChange(func() {
-					a.cfg.ClearClipboard = secs[slices.Index(labels, sel)]
-					a.changed()
-				})
-			})
-		})
-		section(c, k, "Filling", func() {
-			trusted := a.sys.trusted(false)
-			detail := fmt.Sprintf("%s types your username and password into the browser or app you came from, and %s into the website it opens.",
-				a.cfg.keyHint("default"), a.cfg.keyHint("open-fill"))
-			settingRow(c, k, "Accessibility access", detail, func() {
-				if trusted {
-					ui.Row(c).Gap(5).AlignItems(ui.Center).Children(func() {
-						ui.Icon(c, iconCheck).FontSize(13).TextColor(k.okay)
-						ui.Text(c, "Allowed").FontSize(12).TextColor(k.muted)
+				if a.vault != nil {
+					settingRow(c, k, "Lock now", "Forgets the vault until you unlock it again.", func() {
+						ui.Button(c.Key("lock"), "Lock").OnClick(func() { a.lock(true); a.page = pageItems })
 					})
-					return
 				}
-				ui.Button(c.Key("allow"), "Allow…").OnClick(func() {
-					a.sys.trusted(true)
-					a.sys.openURL(macos.AccessibilitySettingsURL)
+			})
+			section(c, k, "Security", func() {
+				minutes := []int{0, 1, 5, 10, 15, 30, 60, 240}
+				labels := []string{"Never", "After 1 minute", "After 5 minutes", "After 10 minutes", "After 15 minutes", "After 30 minutes", "After 1 hour", "After 4 hours"}
+				sel := labels[max(0, slices.Index(minutes, a.cfg.AutoLock))]
+				settingRow(c, k, "Lock when idle", "When the Mac has had no input for this long.", func() {
+					ui.Select(c.Key("autolock"), &sel, labels).Width(170).OnChange(func() {
+						a.cfg.AutoLock = minutes[slices.Index(labels, sel)]
+						a.changed()
+					})
+				})
+				switchRow(c.Key("sleep"), k, "Lock when the Mac sleeps", "Or when its screen locks.", &a.cfg.LockOnSleep, a.changed)
+				detail := "After Bitwarden Mini locks itself, your fingerprint unlocks it until it quits."
+				if !a.sys.biometrics() {
+					detail = "This Mac has no Touch ID set up."
+				}
+				switchRow(c.Key("touch"), k, "Unlock with Touch ID", detail, &a.cfg.TouchID, a.changed)
+			})
+			section(c, k, "Appearance", func() {
+				var labels []string
+				sel := materials[0].label
+				for _, m := range materials {
+					labels = append(labels, m.label)
+					if m.id == a.cfg.Material {
+						sel = m.label
+					}
+				}
+				settingRow(c, k, "Window material", "What shows through behind the window, blurred, as macOS's own panels do. Solid shows none.", func() {
+					ui.Select(c.Key("material"), &sel, labels).Width(170).OnChange(func() {
+						for _, m := range materials {
+							if m.label == sel {
+								a.cfg.Material = m.id
+							}
+						}
+						a.changed()
+						a.applyMaterial()
+					})
 				})
 			})
-			if !trusted {
-				c.After(2 * time.Second) // notice as it's allowed
-			}
-		})
-		a.shortcutsSection(c.Key("keys"), k)
-		ui.Row(c).Gap(8).AlignItems(ui.Center).Margin(4, 0, 0, 0).FontSize(11).TextColor(k.faint).Children(func() {
-			ui.Text(c, "Bitwarden Mini "+a.version).Grow(1)
-			textButton(c.Key("quit"), k, "Quit Bitwarden Mini", nil).OnClick(a.quit)
+			section(c, k, "Clipboard", func() {
+				secs := []int{0, 30, 60, 90, 120, 300}
+				labels := []string{"Never", "After 30 seconds", "After 1 minute", "After 90 seconds", "After 2 minutes", "After 5 minutes"}
+				i := slices.Index(secs, a.cfg.ClearClipboard)
+				if i < 0 {
+					i = 3
+				}
+				sel := labels[i]
+				settingRow(c, k, "Clear copied secrets", "Passwords and codes leave the clipboard, unless you copied something else since.", func() {
+					ui.Select(c.Key("clear"), &sel, labels).Width(170).OnChange(func() {
+						a.cfg.ClearClipboard = secs[slices.Index(labels, sel)]
+						a.changed()
+					})
+				})
+			})
+			section(c, k, "Filling", func() {
+				trusted := a.sys.trusted(false)
+				detail := fmt.Sprintf("%s types your username and password into the browser or app you came from, and %s into the website it opens.",
+					a.cfg.keyHint("default"), a.cfg.keyHint("open-fill"))
+				settingRow(c, k, "Accessibility access", detail, func() {
+					if trusted {
+						ui.Row(c).Gap(5).AlignItems(ui.Center).Children(func() {
+							ui.Icon(c, iconCheck).FontSize(13).TextColor(k.okay)
+							ui.Text(c, "Allowed").FontSize(12).TextColor(k.muted)
+						})
+						return
+					}
+					ui.Button(c.Key("allow"), "Allow…").OnClick(func() {
+						a.sys.trusted(true)
+						a.sys.openURL(macos.AccessibilitySettingsURL)
+					})
+				})
+				if !trusted {
+					c.After(2 * time.Second) // notice as it's allowed
+				}
+			})
+			a.shortcutsSection(c.Key("keys"), k)
+			ui.Row(c).Gap(8).AlignItems(ui.Center).Margin(4, 0, 0, 0).FontSize(11).TextColor(k.faint).Children(func() {
+				ui.Text(c, "Bitwarden Mini "+a.version).Grow(1)
+				textButton(c.Key("quit"), k, "Quit Bitwarden Mini", nil).OnClick(a.quit)
+			})
 		})
 	})
 }
