@@ -43,6 +43,9 @@ var (
 	ErrBiometricsLockout = errors.New("Touch ID is locked after too many attempts")
 	// ErrAuthFailed means the finger was not recognized.
 	ErrAuthFailed = errors.New("Touch ID did not recognize the fingerprint")
+	// ErrSealedGone means the key of a sealed secret no longer opens it,
+	// as when the fingerprints of Touch ID changed.
+	ErrSealedGone = errors.New("the Secure Enclave no longer opens the secret")
 )
 
 // BitwardenBundleID is the bundle identifier of the Bitwarden desktop app.

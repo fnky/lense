@@ -35,6 +35,12 @@ func BarMaterial(nsWindow uintptr, height, radius float64, material int) uintptr
 	return 0
 }
 func ShowBar(view uintptr, show bool) {}
+
+type Sealed struct{}
+
+func Seal(secret []byte) (*Sealed, error)                      { return nil, ErrBiometricsUnavailable }
+func (s *Sealed) Open(reason, fallback string) ([]byte, error) { return nil, ErrSealedGone }
+func (s *Sealed) Release()                                     {}
 func BrowserURL(ctx context.Context, bundleID string) (string, error) {
 	return "", errors.ErrUnsupported
 }
