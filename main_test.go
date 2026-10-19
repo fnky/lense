@@ -1175,3 +1175,26 @@ func TestTooltipsNameIconsInTheWindowsAppearance(t *testing.T) {
 		t.Fatalf("the tip is light in dark mode: %v", below)
 	}
 }
+
+func TestWebsiteFieldOpensAndFills(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.unlock()
+	// GitHub, chosen: its website's button opens the page and fills it.
+	h.click("Open and Fill")
+	if len(h.sys.filled) != 1 || h.sys.filled[0].page != "https://github.com/login" || h.sys.filled[0].username != "ada" {
+		t.Fatalf("filled %+v", h.sys.filled)
+	}
+	if len(h.sys.opened) != 0 {
+		t.Fatalf("opened %v, not filled", h.sys.opened)
+	}
+	// Copy comes before the other buttons of a field: the password's
+	// Reveal is at the end of its row, as the username's Copy, alone.
+	cp, _ := h.tt.Find("Copy")
+	reveal, _ := h.tt.Find("Reveal (hold ⌥)")
+	if cp.Y >= reveal.Y || cp.X != reveal.X {
+		t.Fatalf("the username's copy at %v, the password's reveal at %v", cp, reveal)
+	}
+	h.tt.Move(reveal.X-100, reveal.Y+reveal.H/2)
+	h.settle()
+	snapshot(t, h.tt, "field-hover")
+}

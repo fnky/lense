@@ -709,11 +709,19 @@ func (a *app) fieldRow(c *ui.Context, k ink, it *bw.Item, f field, key string, r
 				val.SingleLine()
 			}
 		})
+		// Copy shows as the pointer comes, before what the row always
+		// shows, which stays in its place.
+		cp := iconButton(c.Key("copy"), k, iconCopy, "Copy").OnClick(func() {
+			a.copyField(it, f)
+			a.search.Focus()
+		})
+		if !row.Hovered() && !focused {
+			cp.Opacity(0)
+		}
 		if f.kind == "totp" {
 			_, left, _ := a.code(it)
 			countdown(c, k, left, 30)
 		}
-		hovered := row.Hovered() || focused
 		if f.secret && f.kind != "totp" {
 			ic, label := iconEye, "Reveal"
 			if reveal {
@@ -733,14 +741,13 @@ func (a *app) fieldRow(c *ui.Context, k ink, it *bw.Item, f field, key string, r
 			if !strings.Contains(u, "://") {
 				u = "https://" + u
 			}
-			iconButton(c.Key("open"), k, iconExternal, "Open").OnClick(func() { a.sys.openURL(u) })
-		}
-		cp := iconButton(c.Key("copy"), k, iconCopy, "Copy").OnClick(func() {
-			a.copyField(it, f)
-			a.search.Focus()
-		})
-		if !hovered {
-			cp.Opacity(0)
+			// A website opens and fills, as Shift-Return does the first;
+			// another address only opens.
+			if web := strings.HasPrefix(u, "https://") || strings.HasPrefix(u, "http://"); web && it.Login != nil {
+				iconButton(c.Key("open"), k, iconExternal, "Open and Fill").OnClick(func() { a.fillInto(it, u) })
+			} else {
+				iconButton(c.Key("open"), k, iconExternal, "Open").OnClick(func() { a.sys.openURL(u) })
+			}
 		}
 	})
 }

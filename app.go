@@ -1173,6 +1173,15 @@ func (a *app) fill(it *bw.Item, open bool) {
 			return
 		}
 	}
+	a.fillInto(it, page)
+}
+
+// fillInto types the login into page, which it opens first, or into the
+// app the user was in without one.
+func (a *app) fillInto(it *bw.Item, page string) {
+	if it == nil || it.Login == nil {
+		return
+	}
 	a.guarded(it, func() {
 		if !a.sys.trusted(false) {
 			a.prob = &problem{
@@ -1201,7 +1210,7 @@ func (a *app) fill(it *bw.Item, open bool) {
 				if err != nil {
 					a.sys.copy(l.Password, true)
 					where := target.Name
-					if open || where == "" {
+					if page != "" || where == "" {
 						where = "the page"
 					}
 					a.prob = &problem{

@@ -93,7 +93,7 @@ Appearance. The list and the details scroll under the footer, which macOS's
 own material frosts, as under Raycast's action bar.
 
 Hold ⌥ to see passwords. Click a field to copy it, or drag it into a field of
-another app. Copied passwords and codes are marked concealed for clipboard
+another app. The button of a website opens it, and fills the login in. Copied passwords and codes are marked concealed for clipboard
 managers, and cleared after 90 seconds unless you copied something else.
 
 ### Search filters
