@@ -177,8 +177,9 @@ type app struct {
 	confirmH    ui.Handle
 
 	// holdOpen keeps the window open as it loses the focus: to Touch ID,
-	// or the desktop app's prompt.
+	// or the desktop app's prompt. refocus gives it the keyboard back.
 	holdOpen int
+	refocus  func()
 
 	// Settings.
 	recording   bool
@@ -199,6 +200,7 @@ func newApp(cfg config, desk desktop, sys system) *app {
 		desk:        desk,
 		onLock:      func() {},
 		onUnlock:    func() {},
+		refocus:     func() {},
 		setShortcut: func(string) error { return nil },
 		exit:        func() {},
 		sel:         -1,
@@ -535,7 +537,7 @@ func (a *app) unlockTouchID() {
 			err := a.sys.authenticate("unlock Bitwarden Mini")
 			a.post(func() {
 				a.busy = ""
-				a.holdOpen--
+				a.release()
 				switch {
 				case err == nil && a.vault != nil:
 					a.opened(a.vault)
@@ -568,7 +570,7 @@ func (a *app) unlockTouchID() {
 		}
 		a.post(func() {
 			a.busy = ""
-			a.holdOpen--
+			a.release()
 			if err != nil {
 				a.lockProb = a.unlockProblem(err, acc)
 				return
@@ -576,6 +578,14 @@ func (a *app) unlockTouchID() {
 			a.opened(v)
 		})
 	})
+}
+
+// release lets the window close again as it loses the focus, and gives
+// it the keyboard back from the prompt it waited for.
+func (a *app) release() {
+	if a.holdOpen--; a.holdOpen == 0 {
+		a.refocus()
+	}
 }
 
 // statusError is the desktop app's answer that it can't unlock with Touch

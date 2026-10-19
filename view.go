@@ -84,10 +84,8 @@ func (a *app) view(c *ui.Context) {
 		c.OnShortcut(ui.Cmd, ui.KeyL, func() { a.lock(false) })
 	}
 
+	// The panel's shadow outlines it with a hairline: no border of its own.
 	box := ui.Column(c).Fill().FontSize(13).TextColor(k.text).Background(k.bg).Radius(radius).Clip()
-	if !c.Vibrancy() {
-		box.Border(1, k.line)
-	}
 	box.Children(func() {
 		switch {
 		case !a.configured() || a.page == pageSetup:

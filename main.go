@@ -24,15 +24,20 @@ import (
 
 const version = "0.1.0"
 
-// shell is what lives as long as the app: the tray icon, the window, the
-// windows of items, and the app's state.
+// shell is what lives as long as the app: the tray icon, the window while
+// it shows, the windows of items, and the app's state.
 type shell struct {
 	a       *app
 	dir     string
 	tray    *mygo.Tray
-	win     *mygo.Window
-	details map[string]*mygo.Window
-	ownPID  int
+	content *ui.Content
+	// win is Quick Access while it shows: a panel that takes the keyboard
+	// without activating the app, as Spotlight's does, so that the app the
+	// user was in stays in front, to fill.
+	win      *mygo.Window
+	details  map[string]*mygo.Window
+	ownPID   int
+	quitting bool
 
 	saving   sync.Mutex
 	shortcut string // registered
@@ -75,33 +80,12 @@ func (s *shell) ready() {
 		a.page = pageItems
 	}
 
-	s.win = mygo.NewWindow(mygo.WindowOptions{
-		Title:             "Bitwarden Mini",
-		Width:             windowWidth,
-		Height:            windowHeight,
-		Frameless:         true,
-		Transparent:       true,
-		Hidden:            true,
-		AlwaysOnTop:       true,
-		DisableResize:     true,
-		DisableMaximize:   true,
-		DisableMinimize:   true,
-		DisableFullScreen: true,
-		Content:           ui.View(a.view),
-	})
-	mygo.RunOnMain(func() { macos.FloatPanel(s.win.NativeHandle()) })
-	s.win.OnClose(func(e *mygo.CloseEvent) {
-		e.PreventDefault()
-		s.hide()
-	})
-	s.win.OnBlur(func() {
-		// Like Spotlight, it goes away as the user goes elsewhere, but not
-		// to the prompts of Touch ID.
-		if a.holdOpen == 0 && s.win.IsVisible() {
-			s.hideOnly()
+	a.refocus = func() {
+		if s.win != nil {
+			s.win.Focus()
 		}
-	})
-	s.win.OnMove(s.remember)
+	}
+	s.content = ui.View(a.view)
 
 	s.tray, err = mygo.NewTray(mygo.TrayOptions{
 		Icon:           trayIcon(true),
@@ -123,6 +107,7 @@ func (s *shell) ready() {
 		a.shortcutErr = fmt.Sprintf("%s is taken by another app. Choose another shortcut.", keySymbols(cfg.Shortcut))
 	}
 
+	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) { s.quitting = true })
 	mygo.App.OnWillQuit(func(*mygo.QuitEvent) {
 		a.lock(true)
 		s.tray.Destroy()
@@ -186,9 +171,9 @@ func (s *shell) updateTray() {
 	}
 }
 
-// toggle shows the window, or hides it when it has the focus.
+// toggle shows the window, or hides it.
 func (s *shell) toggle() {
-	if s.win.IsVisible() && s.win.IsFocused() {
+	if s.win != nil {
 		s.hide()
 		return
 	}
@@ -200,18 +185,43 @@ func (s *shell) toggle() {
 // locked meanwhile.
 func (s *shell) show() {
 	a := s.a
-	if !s.win.IsVisible() {
-		if fa := macos.FrontmostApp(); fa.PID != s.ownPID {
-			a.setFront(fa)
-		}
-		d := mygo.Screen.DisplayNearestPoint(mygo.Screen.CursorScreenPoint())
-		work := rect{d.WorkArea.X, d.WorkArea.Y, d.WorkArea.Width, d.WorkArea.Height}
-		x, y := a.cfg.Window.place(d.ID, work, windowWidth, windowHeight)
-		s.win.SetPosition(x, y)
+	if s.win != nil {
+		s.win.Focus()
+		return
 	}
-	s.win.Show()
-	mygo.App.Focus()
-	s.win.Focus()
+	if fa := macos.FrontmostApp(); fa.PID != s.ownPID {
+		a.setFront(fa)
+	}
+	d := mygo.Screen.DisplayNearestPoint(mygo.Screen.CursorScreenPoint())
+	work := rect{d.WorkArea.X, d.WorkArea.Y, d.WorkArea.Width, d.WorkArea.Height}
+	x, y := a.cfg.Window.place(d.ID, work, windowWidth, windowHeight)
+	w := mygo.NewFlyout(mygo.FlyoutOptions{
+		Tray:      s.tray,
+		Width:     windowWidth,
+		Height:    windowHeight,
+		Focusable: true,
+		Shadow:    true,
+		Hidden:    true,
+		Content:   s.content,
+	})
+	w.SetPosition(x, y)
+	w.OnClose(func(e *mygo.CloseEvent) {
+		// Like Spotlight, it goes as the user goes elsewhere, but not to
+		// the prompts of Touch ID.
+		if a.holdOpen > 0 && !s.quitting {
+			e.PreventDefault()
+			return
+		}
+		s.remember(w)
+	})
+	w.OnClosed(func() {
+		if s.win == w {
+			s.win = nil
+			a.recording = false
+		}
+	})
+	s.win = w
+	w.Show()
 	if a.unlocked() && a.page == pageItems {
 		a.search.Focus()
 	}
@@ -219,32 +229,17 @@ func (s *shell) show() {
 	s.redraw()
 }
 
-// hide hides the window, and gives the keyboard back to the app the user
-// was in.
+// hide closes the window: the keyboard goes back to the app the user was
+// in, which stayed in front.
 func (s *shell) hide() {
-	s.hideOnly()
-	if fa := s.a.front.app; fa.PID != 0 && fa.PID != s.ownPID {
-		macos.Activate(fa.PID)
-	} else if len(s.details) == 0 {
-		mygo.App.Hide()
+	if s.win != nil {
+		s.win.Close()
 	}
-}
-
-func (s *shell) hideOnly() {
-	if !s.win.IsVisible() {
-		return
-	}
-	s.remember()
-	s.win.Hide()
-	s.a.recording = false
 }
 
 // remember records where the window is, on its display.
-func (s *shell) remember() {
-	if s.win == nil || !s.win.IsVisible() {
-		return
-	}
-	b := s.win.Bounds()
+func (s *shell) remember(w *mygo.Window) {
+	b := w.Bounds()
 	d := mygo.Screen.DisplayMatching(b)
 	work := rect{d.WorkArea.X, d.WorkArea.Y, d.WorkArea.Width, d.WorkArea.Height}
 	s.a.cfg.Window.remember(d.ID, work, rect{b.X, b.Y, b.Width, b.Height})
@@ -273,8 +268,7 @@ func (s *shell) openDetail(id string) {
 	})
 	s.details[id] = w
 	w.OnClosed(func() { delete(s.details, id) })
-	s.hideOnly()
-	mygo.App.Focus()
+	s.hide()
 	w.Focus()
 }
 
@@ -305,7 +299,7 @@ func (s *shell) watch() {
 func (s *shell) sleeping() {
 	if s.a.cfg.LockOnSleep && s.a.unlocked() {
 		s.a.lock(false)
-		s.hideOnly()
+		s.hide()
 		s.redraw()
 	}
 }
