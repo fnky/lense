@@ -28,9 +28,17 @@ func DataPaths() []string {
 	)
 }
 
-// FindData returns the data file of the desktop app written last, or
-// ErrNoData.
+// FindData returns the data file of the desktop app: the one in
+// $BITWARDEN_APPDATA_DIR when that is set, as it is for the app itself,
+// else the one written last, or ErrNoData.
 func FindData() (string, error) {
+	if dir := os.Getenv("BITWARDEN_APPDATA_DIR"); dir != "" {
+		p := filepath.Join(dir, "data.json")
+		if _, err := os.Stat(p); err != nil {
+			return "", ErrNoData
+		}
+		return p, nil
+	}
 	var best string
 	var at time.Time
 	for _, p := range DataPaths() {

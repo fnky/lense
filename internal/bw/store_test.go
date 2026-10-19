@@ -2,6 +2,7 @@ package bw_test
 
 import (
 	"errors"
+	"path/filepath"
 	"testing"
 
 	"bitwarden-mini/internal/bw"
@@ -96,4 +97,18 @@ func find(v *bw.Vault, name string) *bw.Item {
 		}
 	}
 	return nil
+}
+
+func TestFindDataPrefersTheOverride(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("BITWARDEN_APPDATA_DIR", dir)
+	if _, err := bw.FindData(); !errors.Is(err, bw.ErrNoData) {
+		t.Fatalf("err %v", err)
+	}
+	p := bwtest.New().Write(t)
+	t.Setenv("BITWARDEN_APPDATA_DIR", filepath.Dir(p))
+	if got, err := bw.FindData(); err != nil || got != p {
+		t.Fatalf("%q %v", got, err)
+	}
 }
