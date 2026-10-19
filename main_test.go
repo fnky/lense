@@ -205,6 +205,33 @@ func (h *harness) click(label string) {
 	h.settle()
 }
 
+// rest rests the pointer on the element showing or labeled s, and returns
+// the texts that show then, its tooltip's, and where it is.
+func (h *harness) rest(s string) ([]string, ui.Rect) {
+	h.t.Helper()
+	r, ok := h.tt.Find(s)
+	if !ok {
+		h.t.Fatalf("no %q", s)
+	}
+	h.tt.Move(10, 470)
+	h.tt.Advance(time.Second)
+	before := h.tt.Texts()
+	h.tt.Move(r.X+r.W/2, r.Y+r.H/2)
+	h.tt.Advance(time.Second)
+	// The texts that show once more than before: labels are texts too.
+	seen := map[string]int{}
+	for _, s := range before {
+		seen[s]++
+	}
+	var tips []string
+	for _, s := range h.tt.Texts() {
+		if seen[s]--; seen[s] < 0 {
+			tips = append(tips, s)
+		}
+	}
+	return tips, r
+}
+
 func (h *harness) key(mods ui.Modifiers, k ui.Key) {
 	h.tt.Key(mods, k)
 	h.settle()
@@ -1132,40 +1159,14 @@ func TestTooltipsNameIconsInTheWindowsAppearance(t *testing.T) {
 	h := newHarness(t, nil, true)
 	h.tt.SetDark(true)
 	h.unlock()
-	// rest rests the pointer on the element showing or labeled s, and
-	// returns the texts that show then, and where it is.
-	rest := func(s string) ([]string, ui.Rect) {
-		t.Helper()
-		r, ok := h.tt.Find(s)
-		if !ok {
-			t.Fatalf("no %q", s)
-		}
-		h.tt.Move(10, 470)
-		h.tt.Advance(time.Second)
-		before := h.tt.Texts()
-		h.tt.Move(r.X+r.W/2, r.Y+r.H/2)
-		h.tt.Advance(time.Second)
-		// The texts that show once more than before: labels are texts too.
-		seen := map[string]int{}
-		for _, s := range before {
-			seen[s]++
-		}
-		var tips []string
-		for _, s := range h.tt.Texts() {
-			if seen[s]--; seen[s] < 0 {
-				tips = append(tips, s)
-			}
-		}
-		return tips, r
-	}
 	// What says what it does itself has no tip.
 	for _, s := range []string{"Open in Bitwarden", "All Vaults", "username"} {
-		if tips, _ := rest(s); len(tips) > 0 {
+		if tips, _ := h.rest(s); len(tips) > 0 {
 			t.Errorf("%s shows a tip: %q", s, tips)
 		}
 	}
 	// An icon has, in the window's appearance: dark in dark mode.
-	tips, r := rest("Settings (⌘,)")
+	tips, r := h.rest("Settings (⌘,)")
 	if !slices.Equal(tips, []string{"Settings (⌘,)"}) {
 		t.Fatalf("the settings' tip: %q", tips)
 	}
@@ -1241,5 +1242,33 @@ func TestCopyTakesTheSecondsOfACodesPlace(t *testing.T) {
 	_, copied := look(cp.X+4, cp.X+24)
 	if !ring() || seconds || !copied {
 		t.Fatalf("hovered: ring %v, seconds %v, copy %v", ring(), seconds, copied)
+	}
+}
+
+func TestTooltipsTurnOff(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.unlock()
+	if !h.a.cfg.Tooltips {
+		t.Fatal("tooltips off by default")
+	}
+	var saved []config
+	h.a.saveCfg = func(c config) { saved = append(saved, c) }
+	h.tt.SetSize(windowWidth, 2400) // all of the settings, unscrolled
+	h.key(ui.Cmd, ui.KeyComma)
+	// The switch at the end of the setting's row, beside its two lines.
+	label, ok := h.tt.Find("Show tooltips")
+	if !ok {
+		t.Fatalf("no setting in %q", h.tt.Texts())
+	}
+	h.tt.ClickAt(windowWidth-28-18, label.Y+17)
+	h.settle()
+	if h.a.cfg.Tooltips || len(saved) != 1 || saved[0].Tooltips {
+		t.Fatalf("tooltips %v, saved %+v", h.a.cfg.Tooltips, saved)
+	}
+	h.key(0, ui.KeyEscape)
+	h.tt.SetSize(windowWidth, windowHeight)
+	h.settle()
+	if tips, _ := h.rest("Settings (⌘,)"); len(tips) > 0 {
+		t.Fatalf("tooltips off, the settings' shows %q", tips)
 	}
 }

@@ -71,6 +71,7 @@ func (a *app) settingsView(c *ui.Context, k ink) {
 						a.applyMaterial()
 					})
 				})
+				switchRow(c, k, "Show tooltips", "Names the buttons of an icon as the pointer rests on them.", &a.cfg.Tooltips, a.changed)
 			})
 			section(c, k, "Clipboard", func() {
 				secs := []int{0, 30, 60, 90, 120, 300}

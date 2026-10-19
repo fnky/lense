@@ -33,6 +33,8 @@ type config struct {
 	// Material is what the window shows behind its content: "solid", or a
 	// material of macOS, which blurs what is behind the window.
 	Material string `json:"material,omitempty"`
+	// Tooltips name the buttons of an icon as the pointer rests on them.
+	Tooltips bool `json:"tooltips"`
 
 	// Vault is the vault shown: "" all of them, "personal", or an
 	// organization's ID.
@@ -57,6 +59,7 @@ func defaultConfig() config {
 		LockOnSleep:    true,
 		ClearClipboard: 90,
 		Material:       "popover",
+		Tooltips:       true,
 	}
 }
 

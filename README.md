@@ -90,7 +90,8 @@ shortcut that shows Bitwarden Mini included.
 Quick Access shows one of macOS's materials behind its content: Popover,
 unless you choose Solid, Menu, HUD, Sidebar or Under Window in Settings →
 Appearance. The list and the details scroll under the footer, which macOS's
-own material frosts, as under Raycast's action bar.
+own material frosts, as under Raycast's action bar. Buttons of an icon name
+themselves in a tooltip, unless you turn tooltips off there too.
 
 Hold ⌥ to see passwords. Click a field to copy it, or drag it into a field of
 another app. The button of a website opens it, and fills the login in. Copied passwords and codes are marked concealed for clipboard

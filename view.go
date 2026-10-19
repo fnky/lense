@@ -26,8 +26,9 @@ type ink struct {
 	// chrome is under the bars, raised under what floats over the
 	// window: dialogs, menus, Large Type.
 	chrome, raised ui.Color
-	// vibrant is whether the window shows a material.
-	vibrant bool
+	// vibrant is whether the window shows a material, and tips whether
+	// buttons of an icon show tooltips (config.Tooltips).
+	vibrant, tips bool
 }
 
 func inkOf(t *ui.Theme) ink {
@@ -107,6 +108,7 @@ func (a *app) view(c *ui.Context) {
 	c.SetTheme(theme(c.Theme()))
 	t := c.Theme()
 	k := inkOf(t)
+	k.tips = a.cfg.Tooltips
 	if c.Vibrancy() {
 		k = k.over(t.Dark)
 	}
@@ -182,7 +184,10 @@ func (a *app) openSettings() {
 // iconButton is a borderless button showing an icon, which a tooltip
 // names: buttons of a label, and rows, say what they are themselves.
 func iconButton(c *ui.Context, k ink, svg *ui.SVG, label string) ui.Element {
-	b := ui.ButtonBase(c).Size(28, 28).Center().Radius(7).Label(label).Tooltip(label)
+	b := ui.ButtonBase(c).Size(28, 28).Center().Radius(7).Label(label)
+	if k.tips {
+		b.Tooltip(label)
+	}
 	switch {
 	case b.Pressed():
 		b.Background(k.press)

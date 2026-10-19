@@ -387,6 +387,7 @@ func (a *app) footer(c *ui.Context, k ink) {
 func (a *app) footerView(c *ui.Context) {
 	c.SetTheme(theme(c.Theme()))
 	k := inkOf(c.Theme())
+	k.tips = a.cfg.Tooltips
 	c.Root().Background(ui.Transparent).FontSize(13).TextColor(k.text)
 	if !a.footerShows() {
 		return
@@ -870,6 +871,7 @@ func (a *app) confirmView(c *ui.Context, k ink) {
 func (a *app) detailWindow(c *ui.Context, id string) {
 	c.SetTheme(theme(c.Theme()))
 	k := inkOf(c.Theme())
+	k.tips = a.cfg.Tooltips
 	c.Root().Background(k.bg).FontSize(13).TextColor(k.text)
 	var it *bw.Item
 	if a.unlocked() {
