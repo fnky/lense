@@ -96,9 +96,53 @@ func (f *Fixture) Collection(name string) string {
 	return id
 }
 
+// Item is an item to add, in the clear: as bw.Item is, with its secrets
+// strings, which bw keeps encrypted.
+type Item struct {
+	ID             string
+	Type           bw.ItemType
+	Name           string
+	Notes          string
+	OrganizationID string
+	FolderID       string
+	CollectionIDs  []string
+	Favorite       bool
+	Reprompt       bool
+	Deleted        bool
+	Login          *Login
+	Card           *Card
+	Identity       *Identity
+	SSHKey         *SSHKey
+	Fields         []Field
+}
+
+type Login struct {
+	Username, Password, TOTP string
+	URIs                     []bw.URI
+	Passkeys                 []bw.Passkey
+}
+
+type Card struct {
+	CardholderName, Brand, Number, ExpMonth, ExpYear, Code string
+}
+
+type Identity struct {
+	Title, FirstName, LastName, Email, Phone string
+	Address1, City, Country, Company, SSN    string
+}
+
+type SSHKey struct {
+	PrivateKey, PublicKey, Fingerprint string
+}
+
+type Field struct {
+	Type        bw.FieldType
+	Name, Value string
+}
+
 // Add adds an item, encrypted with a key of its own when itemKey is true,
 // returning its ID. Its organization is it.OrganizationID.
-func (f *Fixture) Add(it bw.Item, itemKey bool) string {
+func (f *Fixture) Add(it Item, itemKey bool) string {
 	if it.ID == "" {
 		it.ID = f.id(5)
 	}
@@ -163,6 +207,7 @@ func (f *Fixture) Add(it bw.Item, itemKey bool) string {
 			"title": enc(key, id.Title), "firstName": enc(key, id.FirstName), "lastName": enc(key, id.LastName),
 			"email": enc(key, id.Email), "phone": enc(key, id.Phone), "address1": enc(key, id.Address1),
 			"city": enc(key, id.City), "country": enc(key, id.Country), "company": enc(key, id.Company),
+			"ssn": enc(key, id.SSN),
 		}
 	}
 	if k := it.SSHKey; k != nil {
@@ -242,33 +287,33 @@ func Sample() *Fixture {
 	f.Folder("Personal")
 	eng := f.Collection("Engineering")
 	m := func(n int) *int { return &n }
-	f.Add(bw.Item{Type: bw.TypeLogin, Name: "GitHub", Favorite: true, FolderID: work, Login: &bw.Login{
+	f.Add(Item{Type: bw.TypeLogin, Name: "GitHub", Favorite: true, FolderID: work, Login: &Login{
 		Username: "ada", Password: "gh-s3cret!", TOTP: "JBSWY3DPEHPK3PXP",
 		URIs: []bw.URI{{URI: "https://github.com/login"}},
 	}}, true)
-	f.Add(bw.Item{Type: bw.TypeLogin, Name: "Google", Login: &bw.Login{
+	f.Add(Item{Type: bw.TypeLogin, Name: "Google", Login: &Login{
 		Username: "ada@gmail.com", Password: "g00gle-pass",
 		URIs:     []bw.URI{{URI: "https://accounts.google.com"}},
 		Passkeys: []bw.Passkey{{RpID: "google.com", RpName: "Google", UserName: "ada@gmail.com"}},
 	}}, false)
-	f.Add(bw.Item{Type: bw.TypeLogin, Name: "AWS Console", OrganizationID: f.OrgID, CollectionIDs: []string{eng}, Login: &bw.Login{
+	f.Add(Item{Type: bw.TypeLogin, Name: "AWS Console", OrganizationID: f.OrgID, CollectionIDs: []string{eng}, Login: &Login{
 		Username: "ada.admin", Password: "aws-pa55",
 		URIs: []bw.URI{{URI: "https://signin.aws.amazon.com", Match: m(1)}},
 	}}, true)
-	f.Add(bw.Item{Type: bw.TypeLogin, Name: "Router", Notes: "In the hallway closet", Login: &bw.Login{
+	f.Add(Item{Type: bw.TypeLogin, Name: "Router", Notes: "In the hallway closet", Login: &Login{
 		Username: "admin", Password: "router-admin", URIs: []bw.URI{{URI: "192.168.1.1"}},
 	}}, false)
-	f.Add(bw.Item{Type: bw.TypeCard, Name: "Visa", Favorite: true, Card: &bw.Card{
+	f.Add(Item{Type: bw.TypeCard, Name: "Visa", Favorite: true, Card: &Card{
 		CardholderName: "Ada Lovelace", Brand: "Visa", Number: "4111111111111111", ExpMonth: "8", ExpYear: "2029", Code: "123",
 	}}, true)
-	f.Add(bw.Item{Type: bw.TypeSecureNote, Name: "Wi-Fi", Notes: "Network: Analytical\nPassword: engine-1843"}, false)
-	f.Add(bw.Item{Type: bw.TypeIdentity, Name: "Ada Lovelace", Identity: &bw.Identity{
+	f.Add(Item{Type: bw.TypeSecureNote, Name: "Wi-Fi", Notes: "Network: Analytical\nPassword: engine-1843"}, false)
+	f.Add(Item{Type: bw.TypeIdentity, Name: "Ada Lovelace", Identity: &Identity{
 		FirstName: "Ada", LastName: "Lovelace", Email: "ada@example.com", Phone: "+44 20 7946 0000", City: "London", Country: "GB",
 	}}, false)
-	f.Add(bw.Item{Type: bw.TypeSSHKey, Name: "Deploy key", OrganizationID: f.OrgID, CollectionIDs: []string{eng}, SSHKey: &bw.SSHKey{
+	f.Add(Item{Type: bw.TypeSSHKey, Name: "Deploy key", OrganizationID: f.OrgID, CollectionIDs: []string{eng}, SSHKey: &SSHKey{
 		PrivateKey: "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\n-----END OPENSSH PRIVATE KEY-----",
 		PublicKey:  "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIA deploy", Fingerprint: "SHA256:4k3yF1ngerPr1nt",
 	}}, true)
-	f.Add(bw.Item{Type: bw.TypeLogin, Name: "Old account", Deleted: true, Login: &bw.Login{Username: "gone"}}, false)
+	f.Add(Item{Type: bw.TypeLogin, Name: "Old account", Deleted: true, Login: &Login{Username: "gone"}}, false)
 	return f
 }

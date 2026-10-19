@@ -148,6 +148,7 @@ func (a *app) close() {
 func (a *app) hidden() {
 	a.reveal, a.reprompted = map[string]bool{}, map[string]bool{}
 	a.large = nil
+	a.codes, a.shownValues = nil, nil
 }
 
 // --- The fields of the item chosen ---
@@ -158,6 +159,7 @@ func (a *app) setMode(m mode) {
 	if a.mode == modeDetails && m != modeDetails {
 		a.reveal = map[string]bool{}
 		a.large = nil
+		a.shownValues = nil
 	}
 	if m == modeVaults && a.mode != modeVaults {
 		a.vaultBand = band{} // the selector opens at its top
@@ -214,7 +216,14 @@ func (a *app) revealField() {
 		a.guarded(it, func() { a.reveal[key] = true })
 		return
 	}
-	a.guarded(it, func() { a.large = &largeType{label: f.label, value: f.value, item: it.Name} })
+	a.guarded(it, func() {
+		v, err := f.open()
+		if err != nil {
+			a.say("Couldn't decrypt %s of %s", f.label, it.Name)
+			return
+		}
+		a.large = &largeType{label: f.label, value: v, item: it.Name}
+	})
 }
 
 // largeType is a value shown big enough to read across a room, or to type
@@ -358,12 +367,12 @@ func (a *app) jumpVault(n int) {
 // in when that app has a field to fill, as a browser's page, and copies
 // its password otherwise; for the other items, what they hold first.
 func (a *app) defaultAction(it *bw.Item) {
-	if l := it.Login; l != nil && l.Password != "" {
+	if l := it.Login; l != nil && !l.Password.Empty() {
 		if t := a.front.app; t.PID != 0 && (macos.IsBrowser(t.BundleID) || a.sys.fieldFocused(t)) {
 			a.fill(it, false)
 			return
 		}
-		a.copyField(it, field{label: "password", value: l.Password, secret: true})
+		a.copyField(it, field{label: "password", sec: l.Password, secret: true})
 		return
 	}
 	if f, ok := primary(it); ok {
@@ -376,7 +385,7 @@ func (a *app) defaultAction(it *bw.Item) {
 // fillTarget names where Return fills, or "".
 func (a *app) fillTarget(it *bw.Item) string {
 	t := a.front.app
-	if it == nil || it.Login == nil || it.Login.Password == "" || t.PID == 0 {
+	if it == nil || it.Login == nil || it.Login.Password.Empty() || t.PID == 0 {
 		return ""
 	}
 	if macos.IsBrowser(t.BundleID) || a.sys.fieldFocused(t) {

@@ -19,6 +19,13 @@ decrypts it with:
 - **The master password,** which derives the key offline (PBKDF2 or
   Argon2id, as the account uses).
 
+Unlocked, Mini decrypts only what lists and searches the vault: names,
+usernames, websites, a card's last digits. Passwords, codes, card numbers,
+notes, keys and hidden fields stay encrypted in memory, as Bitwarden stores
+them, until they show, copy or fill; the vault's keys stay encrypted in
+memory too, in [memguard](https://github.com/awnumar/memguard)'s enclaves,
+which open them for each decryption alone.
+
 ## Requirements
 
 - macOS 14 or newer, with the Bitwarden desktop app signed in to your account

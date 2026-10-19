@@ -355,7 +355,7 @@ func (ix *Index) term(it *bw.Item, t string) int {
 	if c := it.Card; c != nil {
 		try(c.Brand, 40, 30, 15)
 		try(c.CardholderName, 30, 20, 10)
-		if n := len(c.Number); n >= 4 && t == c.Number[n-4:] {
+		if c.Last4 != "" && t == c.Last4 {
 			best = max(best, 40)
 		}
 	}

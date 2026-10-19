@@ -8,7 +8,10 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/awnumar/memguard"
 )
 
 // ItemType is the kind of an item, as Bitwarden numbers them.
@@ -43,7 +46,7 @@ type Item struct {
 	ID             string
 	Type           ItemType
 	Name           string
-	Notes          string
+	Notes          Secret
 	OrganizationID string // empty in the personal vault
 	FolderID       string
 	CollectionIDs  []string
@@ -65,8 +68,8 @@ type Item struct {
 
 type Login struct {
 	Username string
-	Password string
-	TOTP     string
+	Password Secret
+	TOTP     Secret
 	URIs     []URI
 	Passkeys []Passkey
 }
@@ -89,18 +92,19 @@ type Passkey struct {
 type Card struct {
 	CardholderName string
 	Brand          string
-	Number         string
+	Number         Secret
+	Last4          string // the number's last four digits, which show and search
 	ExpMonth       string
 	ExpYear        string
-	Code           string
+	Code           Secret
 }
 
 type Identity struct {
 	Title, FirstName, MiddleName, LastName string
 	Address1, Address2, Address3           string
 	City, State, PostalCode, Country       string
-	Company, Email, Phone, SSN, Username   string
-	PassportNumber, LicenseNumber          string
+	Company, Email, Phone, Username        string
+	SSN, PassportNumber, LicenseNumber     Secret
 }
 
 // FullName joins the parts of the identity's name.
@@ -115,7 +119,7 @@ func (i *Identity) FullName() string {
 }
 
 type SSHKey struct {
-	PrivateKey  string
+	PrivateKey  Secret
 	PublicKey   string
 	Fingerprint string
 }
@@ -130,10 +134,12 @@ const (
 	FieldLinked  FieldType = 3
 )
 
+// Field is a custom field: its Value, or a hidden one's Secret.
 type Field struct {
-	Type  FieldType
-	Name  string
-	Value string
+	Type   FieldType
+	Name   string
+	Value  string
+	Secret Secret
 }
 
 // Folder is a folder of the personal vault.
@@ -166,29 +172,32 @@ type Vault struct {
 	Collections   []Collection
 	Synced        time.Time
 
-	userKey SymmetricKey
-	orgKeys map[string]SymmetricKey
+	// The keys of the vaults, in enclaves of memguard (sealKey), which
+	// the secrets of the items decrypt with.
+	mu      sync.RWMutex
+	userKey *memguard.Enclave
+	orgKeys map[string]*memguard.Enclave
 }
 
-// Lock forgets the keys of the vault.
+// Lock forgets the keys of the vault: its secrets open no more.
 func (v *Vault) Lock() {
 	if v == nil {
 		return
 	}
-	v.userKey.Wipe()
-	for _, k := range v.orgKeys {
-		k.Wipe()
-	}
-	v.orgKeys = nil
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.userKey, v.orgKeys = nil, nil
 }
 
-// UserKey returns the key of the personal vault.
-func (v *Vault) UserKey() SymmetricKey { return v.userKey }
-
-// OrganizationKey returns the key of an organization's vault.
-func (v *Vault) OrganizationKey(id string) (SymmetricKey, bool) {
-	k, ok := v.orgKeys[id]
-	return k, ok
+// UserKey returns a copy of the key of the personal vault: wipe it once
+// used.
+func (v *Vault) UserKey() ([]byte, error) {
+	var out []byte
+	err := v.withKey("", func(k SymmetricKey) error {
+		out = k.Bytes()
+		return nil
+	})
+	return out, err
 }
 
 // Item returns the item with id, or nil.
@@ -295,7 +304,15 @@ func (s *Store) Decrypt(userID string, key SymmetricKey) (*Vault, error) {
 	if err := s.CheckUserKey(userID, key); err != nil {
 		return nil, fmt.Errorf("bw: the key does not unlock this account: %w", err)
 	}
-	v := &Vault{UserID: userID, userKey: SymmetricKey{Enc: bytes.Clone(key.Enc), MAC: bytes.Clone(key.MAC)}, orgKeys: map[string]SymmetricKey{}}
+	v := &Vault{UserID: userID, userKey: sealKey(key), orgKeys: map[string]*memguard.Enclave{}}
+	// The keys of the organizations, as the vault decrypts, which go once
+	// it did: their enclaves stay.
+	opened := map[string]SymmetricKey{}
+	defer func() {
+		for _, k := range opened {
+			k.Wipe()
+		}
+	}()
 	var last string
 	if s.get(userKey(userID, "sync_lastSync"), &last) {
 		v.Synced, _ = time.Parse(time.RFC3339Nano, last)
@@ -330,7 +347,8 @@ func (s *Store) Decrypt(userID string, key SymmetricKey) (*Vault, error) {
 			continue
 		}
 		if k, err := NewSymmetricKey(b); err == nil {
-			v.orgKeys[id] = k
+			opened[id] = k
+			v.orgKeys[id] = sealKey(k)
 		}
 		clear(b)
 	}
@@ -372,7 +390,7 @@ func (s *Store) Decrypt(userID string, key SymmetricKey) (*Vault, error) {
 	}
 	s.get(userKey(userID, "collection_collections"), &cols)
 	for id, c := range cols {
-		k, ok := v.orgKeys[c.OrganizationID]
+		k, ok := opened[c.OrganizationID]
 		if !ok {
 			continue
 		}
@@ -392,7 +410,7 @@ func (s *Store) Decrypt(userID string, key SymmetricKey) (*Vault, error) {
 		if c.DeletedDate != "" {
 			continue // in the trash
 		}
-		v.Items = append(v.Items, v.decryptCipher(c))
+		v.Items = append(v.Items, v.decryptCipher(c, key, opened))
 	}
 	sort.Slice(v.Items, func(i, j int) bool {
 		a, b := strings.ToLower(v.Items[i].Name), strings.ToLower(v.Items[j].Name)
@@ -408,7 +426,10 @@ func (s *Store) Decrypt(userID string, key SymmetricKey) (*Vault, error) {
 // unknown, as when the account left it.
 var ErrNoOrganizationKey = errors.New("bw: no key for the item's organization")
 
-func (v *Vault) decryptCipher(c cipherData) *Item {
+// decryptCipher decrypts what of an item lists and searches, with the
+// keys of the vaults in hand: its secrets stay encrypted, which their
+// MACs check.
+func (v *Vault) decryptCipher(c cipherData, userKey SymmetricKey, orgKeys map[string]SymmetricKey) *Item {
 	it := &Item{
 		ID: c.ID, Type: c.Type, OrganizationID: c.OrganizationID, FolderID: c.FolderID,
 		CollectionIDs: c.CollectionIDs, Favorite: c.Favorite, Reprompt: c.Reprompt == 1,
@@ -418,14 +439,14 @@ func (v *Vault) decryptCipher(c cipherData) *Item {
 	it.Revised, _ = time.Parse(time.RFC3339Nano, c.RevisionDate)
 	it.Created, _ = time.Parse(time.RFC3339Nano, c.CreationDate)
 
-	key := v.userKey
+	key, ck := userKey, &cipherKey{v: v}
 	if c.OrganizationID != "" {
-		k, ok := v.orgKeys[c.OrganizationID]
+		k, ok := orgKeys[c.OrganizationID]
 		if !ok {
 			it.Name, it.Err = "[error: cannot decrypt]", ErrNoOrganizationKey
 			return it
 		}
-		key = k
+		key, ck.org = k, c.OrganizationID
 	}
 	if c.Key != "" {
 		// The item has a key of its own, which its key encrypts.
@@ -443,6 +464,12 @@ func (v *Vault) decryptCipher(c cipherData) *Item {
 			return it
 		}
 		defer key.Wipe()
+		ck.own = &e
+	}
+	failed := func(err error) {
+		if it.Err == nil {
+			it.Err = err
+		}
 	}
 	dec := func(s string) string {
 		if s == "" {
@@ -450,18 +477,30 @@ func (v *Vault) decryptCipher(c cipherData) *Item {
 		}
 		out, err := key.DecryptString(s)
 		if err != nil {
-			if it.Err == nil {
-				it.Err = err
-			}
+			failed(err)
 			return "[error: cannot decrypt]"
 		}
 		return out
 	}
+	sec := func(s string) Secret {
+		if s == "" {
+			return Secret{}
+		}
+		e, err := ParseEncString(s)
+		if err == nil {
+			err = key.verify(e)
+		}
+		if err != nil {
+			failed(err)
+			return Secret{}
+		}
+		return Secret{enc: &e, key: ck}
+	}
 
 	it.Name = dec(c.Name)
-	it.Notes = dec(c.Notes)
+	it.Notes = sec(c.Notes)
 	if l := c.Login; l != nil {
-		it.Login = &Login{Username: dec(l.Username), Password: dec(l.Password), TOTP: dec(l.TOTP)}
+		it.Login = &Login{Username: dec(l.Username), Password: sec(l.Password), TOTP: sec(l.TOTP)}
 		for _, u := range l.URIs {
 			it.Login.URIs = append(it.Login.URIs, URI{URI: dec(u.URI), Match: u.Match})
 		}
@@ -473,8 +512,19 @@ func (v *Vault) decryptCipher(c cipherData) *Item {
 	}
 	if cd := c.Card; cd != nil {
 		it.Card = &Card{
-			CardholderName: dec(cd.CardholderName), Brand: dec(cd.Brand), Number: dec(cd.Number),
-			ExpMonth: dec(cd.ExpMonth), ExpYear: dec(cd.ExpYear), Code: dec(cd.Code),
+			CardholderName: dec(cd.CardholderName), Brand: dec(cd.Brand), Number: sec(cd.Number),
+			ExpMonth: dec(cd.ExpMonth), ExpYear: dec(cd.ExpYear), Code: sec(cd.Code),
+		}
+		// Its last four digits list and search the card: the rest goes.
+		if e, err := ParseEncString(cd.Number); err == nil {
+			if b, err := key.Decrypt(e); err == nil {
+				digits := bytes.ReplaceAll(b, []byte(" "), nil)
+				if n := len(digits); n >= 4 {
+					it.Card.Last4 = string(digits[n-4:])
+				}
+				clear(digits)
+				clear(b)
+			}
 		}
 	}
 	if c.Identity != nil {
@@ -484,15 +534,21 @@ func (v *Vault) decryptCipher(c cipherData) *Item {
 			Title: g("title"), FirstName: g("firstName"), MiddleName: g("middleName"), LastName: g("lastName"),
 			Address1: g("address1"), Address2: g("address2"), Address3: g("address3"),
 			City: g("city"), State: g("state"), PostalCode: g("postalCode"), Country: g("country"),
-			Company: g("company"), Email: g("email"), Phone: g("phone"), SSN: g("ssn"), Username: g("username"),
-			PassportNumber: g("passportNumber"), LicenseNumber: g("licenseNumber"),
+			Company: g("company"), Email: g("email"), Phone: g("phone"), Username: g("username"),
+			SSN: sec(m["ssn"]), PassportNumber: sec(m["passportNumber"]), LicenseNumber: sec(m["licenseNumber"]),
 		}
 	}
 	if k := c.SSHKey; k != nil {
-		it.SSHKey = &SSHKey{PrivateKey: dec(k.PrivateKey), PublicKey: dec(k.PublicKey), Fingerprint: dec(k.KeyFingerprint)}
+		it.SSHKey = &SSHKey{PrivateKey: sec(k.PrivateKey), PublicKey: dec(k.PublicKey), Fingerprint: dec(k.KeyFingerprint)}
 	}
 	for _, f := range c.Fields {
-		it.Fields = append(it.Fields, Field{Type: f.Type, Name: dec(f.Name), Value: dec(f.Value)})
+		fl := Field{Type: f.Type, Name: dec(f.Name)}
+		if f.Type == FieldHidden {
+			fl.Secret = sec(f.Value)
+		} else {
+			fl.Value = dec(f.Value)
+		}
+		it.Fields = append(it.Fields, fl)
 	}
 	return it
 }

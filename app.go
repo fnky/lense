@@ -167,6 +167,11 @@ type app struct {
 	index  *search.Index
 	locked bool
 	busy   string // an unlock under way: "touch", "password"
+	// codes are the one-time passwords shown (code), and shownValues the
+	// secrets shown in the clear, by fieldKey (shownValue): what of the vault
+	// is decrypted, which goes as the window hides or locks.
+	codes       map[string]shownCode
+	shownValues map[string]string
 	// sealed is the user key of sealedFor's account, which the Secure
 	// Enclave sealed as the app locked itself: this Mac's Touch ID opens
 	// it, and the vault decrypts again. Nothing else of the vault stays.
@@ -329,7 +334,12 @@ func (a *app) setStore(st *bw.Store, err error) {
 	}
 	// The desktop app synced: decrypt what changed with the key in hand.
 	old := a.vault
-	key := bw.SymmetricKey{Enc: slices.Clone(old.UserKey().Enc), MAC: slices.Clone(old.UserKey().MAC)}
+	b, err := old.UserKey()
+	if err != nil {
+		return
+	}
+	key, _ := bw.NewSymmetricKey(b)
+	clear(b)
 	userID := old.UserID
 	a.spawn(func() {
 		v, err := st.Decrypt(userID, key)
@@ -546,10 +556,13 @@ func (a *app) lock(hard bool) {
 	}
 	a.vault.Lock()
 	a.vault, a.index = nil, nil
+	// The key the keys of the vault were sealed with goes too.
+	bw.Forget()
 	a.locked = true
 	a.query, a.rows, a.sel = "", nil, -1
 	a.mode, a.fieldSel, a.large = modeResults, 0, nil
 	a.reveal, a.reprompted = map[string]bool{}, map[string]bool{}
+	a.codes, a.shownValues = nil, nil
 	a.prob, a.confirm, a.flash = nil, nil, ""
 	a.tried = false
 	a.onLock()
@@ -560,8 +573,11 @@ func (a *app) lock(hard bool) {
 // through the desktop app alone.
 func (a *app) sealKey(v *bw.Vault) {
 	a.forgetKey()
-	key := v.UserKey().Bytes()
+	key, err := v.UserKey()
 	defer clear(key)
+	if err != nil {
+		return
+	}
 	if s, err := a.sys.seal(key); err == nil {
 		a.sealed, a.sealedFor = s, v.UserID
 	}
@@ -1088,13 +1104,30 @@ func (a *app) activate() {
 	}
 }
 
-// field is a value of an item, as the details show it and copy it.
+// field is a value of an item, as the details show it and copy it: in
+// the clear, or a secret the vault keeps encrypted (sec), which decrypts
+// as it shows, copies or fills, and only then. secret conceals it until
+// revealed.
 type field struct {
 	label  string
 	value  string
+	sec    bw.Secret
 	secret bool
 	kind   string // "totp", "uri", "note", "" for text
 	uri    string
+}
+
+// has reports whether the field holds anything.
+func (f field) has() bool { return f.value != "" || !f.sec.Empty() }
+
+// open returns the field's value, decrypted if the vault keeps it
+// encrypted, in a string, as the clipboard, the keys that type it and
+// what shows it take it.
+func (f field) open() (string, error) {
+	if f.sec.Empty() {
+		return f.value, nil
+	}
+	return f.sec.Reveal()
 }
 
 // primary is what Cmd-C copies: a login's username, a card's number, an
@@ -1103,16 +1136,16 @@ func primary(it *bw.Item) (field, bool) {
 	switch {
 	case it.Login != nil && it.Login.Username != "":
 		return field{label: "username", value: it.Login.Username}, true
-	case it.Card != nil && it.Card.Number != "":
-		return field{label: "card number", value: it.Card.Number, secret: true}, true
+	case it.Card != nil && !it.Card.Number.Empty():
+		return field{label: "card number", sec: it.Card.Number, secret: true}, true
 	case it.Identity != nil && it.Identity.Email != "":
 		return field{label: "email", value: it.Identity.Email}, true
 	case it.Identity != nil && it.Identity.FullName() != "":
 		return field{label: "name", value: it.Identity.FullName()}, true
 	case it.SSHKey != nil && it.SSHKey.PublicKey != "":
 		return field{label: "public key", value: it.SSHKey.PublicKey}, true
-	case it.Type == bw.TypeSecureNote && it.Notes != "":
-		return field{label: "note", value: it.Notes, secret: true}, true
+	case it.Type == bw.TypeSecureNote && !it.Notes.Empty():
+		return field{label: "note", sec: it.Notes, secret: true}, true
 	}
 	return field{}, false
 }
@@ -1121,28 +1154,66 @@ func primary(it *bw.Item) (field, bool) {
 // security code, a key's private half.
 func secretOf(it *bw.Item) (field, bool) {
 	switch {
-	case it.Login != nil && it.Login.Password != "":
-		return field{label: "password", value: it.Login.Password, secret: true}, true
-	case it.Card != nil && it.Card.Code != "":
-		return field{label: "security code", value: it.Card.Code, secret: true}, true
-	case it.SSHKey != nil && it.SSHKey.PrivateKey != "":
-		return field{label: "private key", value: it.SSHKey.PrivateKey, secret: true}, true
+	case it.Login != nil && !it.Login.Password.Empty():
+		return field{label: "password", sec: it.Login.Password, secret: true}, true
+	case it.Card != nil && !it.Card.Code.Empty():
+		return field{label: "security code", sec: it.Card.Code, secret: true}, true
+	case it.SSHKey != nil && !it.SSHKey.PrivateKey.Empty():
+		return field{label: "private key", sec: it.SSHKey.PrivateKey, secret: true}, true
 	}
 	return field{}, false
 }
 
 // code returns the one-time password of a login now, and how long it
-// lasts.
+// lasts. Its key decrypts once a period, as the window shows the code
+// every frame: the code stays in codes until the next.
 func (a *app) code(it *bw.Item) (string, time.Duration, bool) {
-	if it == nil || it.Login == nil || it.Login.TOTP == "" {
-		return "", 0, false
-	}
-	k, err := totp.Parse(it.Login.TOTP)
-	if err != nil {
+	if it == nil || it.Login == nil || it.Login.TOTP.Empty() {
 		return "", 0, false
 	}
 	now := a.now()
-	return k.Code(now), k.Remaining(now), true
+	if c, ok := a.codes[it.ID]; ok && now.Before(c.until) {
+		return c.code, c.until.Sub(now), c.code != ""
+	}
+	var c shownCode
+	s, err := it.Login.TOTP.Reveal()
+	if k, perr := totp.Parse(s); err == nil && perr == nil {
+		c = shownCode{code: k.Code(now), until: now.Add(k.Remaining(now))}
+	} else {
+		c.until = now.Add(30 * time.Second) // not a key: not again for a while
+	}
+	if a.codes == nil {
+		a.codes = map[string]shownCode{}
+	}
+	a.codes[it.ID] = c
+	return c.code, c.until.Sub(now), c.code != ""
+}
+
+// shownCode is the one-time password of an item until it changes.
+type shownCode struct {
+	code  string
+	until time.Time
+}
+
+// shownValue returns what the field of key shows in the clear: decrypted
+// once while it shows, as the window draws it every frame. The secrets go
+// as they are concealed, and the rest as the window hides or locks.
+func (a *app) shownValue(key string, f field) string {
+	if f.sec.Empty() {
+		return f.value
+	}
+	if v, ok := a.shownValues[key]; ok {
+		return v
+	}
+	v, err := f.open()
+	if err != nil {
+		v = "[error: cannot decrypt]"
+	}
+	if a.shownValues == nil {
+		a.shownValues = map[string]string{}
+	}
+	a.shownValues[key] = v
+	return v
 }
 
 // guarded runs fn at once, or after the master password when the item
@@ -1199,7 +1270,12 @@ func (a *app) closeConfirm() {
 // copyField copies a value of an item.
 func (a *app) copyField(it *bw.Item, f field) {
 	do := func() {
-		a.sys.copy(f.value, f.secret)
+		v, err := f.open()
+		if err != nil {
+			a.say("Couldn't decrypt %s of %s", f.label, it.Name)
+			return
+		}
+		a.sys.copy(v, f.secret)
 		a.cfg.used(it.ID)
 		a.changed()
 		if f.secret && a.cfg.ClearClipboard > 0 {
@@ -1308,6 +1384,11 @@ func (a *app) fillInto(it *bw.Item, page string) {
 		}
 		target := a.front.app
 		l := *it.Login
+		password, err := l.Password.Reveal()
+		if err != nil {
+			a.say("Couldn't decrypt the password of %s", it.Name)
+			return
+		}
 		name := it.Name
 		a.cfg.used(it.ID)
 		a.changed()
@@ -1316,10 +1397,10 @@ func (a *app) fillInto(it *bw.Item, page string) {
 		a.spawn(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
-			err := a.sys.fill(ctx, target, fillRequest{username: l.Username, password: l.Password, page: page})
+			err := a.sys.fill(ctx, target, fillRequest{username: l.Username, password: password, page: page})
 			a.post(func() {
 				if err != nil {
-					a.sys.copy(l.Password, true)
+					a.sys.copy(password, true)
 					where := target.Name
 					if page != "" || where == "" {
 						where = "the page"

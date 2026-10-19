@@ -351,17 +351,14 @@ func subtitle(it *bw.Item) string {
 		return search.Host(it.Login.URIs[0].URI)
 	case it.Card != nil:
 		s := it.Card.Brand
-		if n := len(it.Card.Number); n >= 4 {
-			s = strings.TrimSpace(s + " •••• " + it.Card.Number[n-4:])
+		if it.Card.Last4 != "" {
+			s = strings.TrimSpace(s + " •••• " + it.Card.Last4)
 		}
 		return s
 	case it.Identity != nil:
 		return it.Identity.FullName()
 	case it.SSHKey != nil:
 		return it.SSHKey.Fingerprint
-	case it.Type == bw.TypeSecureNote:
-		line, _, _ := strings.Cut(it.Notes, "\n")
-		return line
 	}
 	return it.Type.String()
 }
@@ -457,7 +454,7 @@ func (a *app) footerBar(c *ui.Context, k ink, bar ui.Element) {
 		default:
 			if name := a.fillTarget(it); name != "" {
 				hint("default", "Fill in "+name)
-			} else if it.Login != nil && it.Login.Password != "" {
+			} else if it.Login != nil && !it.Login.Password.Empty() {
 				hint("default", "Copy password")
 			}
 			if f, ok := primary(it); ok {
@@ -603,9 +600,15 @@ func (a *app) fieldsOf(it *bw.Item) []field {
 			fs = append(fs, field{label: label, value: value, secret: secret})
 		}
 	}
+	// What the vault keeps encrypted, which the field decrypts as it shows.
+	sec := func(label string, s bw.Secret) {
+		if !s.Empty() {
+			fs = append(fs, field{label: label, sec: s, secret: true})
+		}
+	}
 	if l := it.Login; l != nil {
 		add("username", l.Username, false)
-		add("password", l.Password, true)
+		sec("password", l.Password)
 		if _, _, ok := a.code(it); ok {
 			fs = append(fs, field{label: "one-time password", kind: "totp", secret: true})
 		}
@@ -618,11 +621,11 @@ func (a *app) fieldsOf(it *bw.Item) []field {
 	if cd := it.Card; cd != nil {
 		add("cardholder name", cd.CardholderName, false)
 		add("brand", cd.Brand, false)
-		add("number", cd.Number, true)
+		sec("number", cd.Number)
 		if cd.ExpMonth != "" || cd.ExpYear != "" {
 			add("expiration", fmt.Sprintf("%02s / %s", cd.ExpMonth, cd.ExpYear), false)
 		}
-		add("security code", cd.Code, true)
+		sec("security code", cd.Code)
 	}
 	if id := it.Identity; id != nil {
 		add("name", id.FullName(), false)
@@ -639,17 +642,17 @@ func (a *app) fieldsOf(it *bw.Item) []field {
 		if len(addr) > 0 {
 			fs = append(fs, field{label: "address", value: strings.Join(addr, "\n"), kind: "note"})
 		}
-		add("social security number", id.SSN, true)
-		add("passport number", id.PassportNumber, true)
-		add("license number", id.LicenseNumber, true)
+		sec("social security number", id.SSN)
+		sec("passport number", id.PassportNumber)
+		sec("license number", id.LicenseNumber)
 	}
 	if k := it.SSHKey; k != nil {
 		add("public key", k.PublicKey, false)
 		add("fingerprint", k.Fingerprint, false)
-		add("private key", k.PrivateKey, true)
+		sec("private key", k.PrivateKey)
 	}
-	if it.Type == bw.TypeSecureNote && it.Notes != "" {
-		fs = append(fs, field{label: "note", value: it.Notes, kind: "note"})
+	if it.Type == bw.TypeSecureNote && !it.Notes.Empty() {
+		fs = append(fs, field{label: "note", sec: it.Notes, kind: "note"})
 	}
 	for _, f := range it.Fields {
 		switch f.Type {
@@ -660,13 +663,13 @@ func (a *app) fieldsOf(it *bw.Item) []field {
 			}
 			add(f.Name, v, false)
 		case bw.FieldHidden:
-			add(f.Name, f.Value, true)
+			sec(f.Name, f.Secret)
 		case bw.FieldText:
 			add(f.Name, f.Value, false)
 		}
 	}
-	if it.Notes != "" && it.Type != bw.TypeSecureNote {
-		fs = append(fs, field{label: "notes", value: it.Notes, kind: "note"})
+	if !it.Notes.Empty() && it.Type != bw.TypeSecureNote {
+		fs = append(fs, field{label: "notes", sec: it.Notes, kind: "note"})
 	}
 	return fs
 }
@@ -683,14 +686,18 @@ func (a *app) fieldRow(c *ui.Context, k ink, it *bw.Item, f field, key string, r
 		f.value = code
 		c.After(left%time.Second + 10*time.Millisecond)
 	}
-	shown := f.value
+	// Concealed, a secret shows as dots, and decrypts not even for their
+	// number: as many as hide most.
+	var shown string
 	switch {
 	case f.secret && f.kind != "totp" && !reveal:
-		shown = strings.Repeat("•", min(max(len([]rune(f.value)), 8), 16))
+		shown = strings.Repeat("•", 10)
 	case f.kind == "totp":
 		shown = totp.Format(f.value)
 	case f.label == "number" && it.Card != nil:
-		shown = cardNumber(f.value)
+		shown = cardNumber(a.shownValue(key, f))
+	default:
+		shown = a.shownValue(key, f)
 	}
 	// The row takes the pointer, not the keyboard, which the search keeps.
 	row := ui.Row(c).Padding(9, 12).Gap(10).AlignItems(ui.Center).Label(f.label).
@@ -708,7 +715,11 @@ func (a *app) fieldRow(c *ui.Context, k ink, it *bw.Item, f field, key string, r
 	if !f.secret || reveal || f.kind == "totp" || !it.Reprompt {
 		// Drop the value into the username and password fields of other
 		// apps: the item asks for nothing more first.
-		row.DragData(transfer.TextData(f.value))
+		// It decrypts as the drag starts, and only then.
+		row.DragDataFrom(func() transfer.Data {
+			v, _ := f.open()
+			return transfer.TextData(v)
+		})
 	}
 	row.OnClick(func() { a.copyField(it, f) })
 	row.Children(func() {
@@ -763,6 +774,7 @@ func (a *app) fieldRow(c *ui.Context, k ink, it *bw.Item, f field, key string, r
 			iconButton(c.Key("reveal"), k, ic, label+" (hold ⌥)").OnClick(func() {
 				if reveal {
 					delete(a.reveal, key)
+					delete(a.shownValues, key)
 				} else {
 					a.guarded(it, func() { a.reveal[key] = true })
 				}

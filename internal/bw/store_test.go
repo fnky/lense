@@ -3,6 +3,7 @@ package bw_test
 import (
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"bitwarden-mini/internal/bw"
@@ -39,27 +40,75 @@ func TestUnlockAndDecrypt(t *testing.T) {
 		}
 	}
 	gh := find(v, "GitHub")
-	if gh == nil || gh.Login.Username != "ada" || gh.Login.Password != "gh-s3cret!" || gh.Login.TOTP != "JBSWY3DPEHPK3PXP" || !gh.Favorite {
+	if gh == nil || gh.Login.Username != "ada" || reveal(t, gh.Login.Password) != "gh-s3cret!" || reveal(t, gh.Login.TOTP) != "JBSWY3DPEHPK3PXP" || !gh.Favorite {
 		t.Errorf("GitHub %+v", gh)
 	}
 	if v.FolderName(gh.FolderID) != "Work" {
 		t.Errorf("folder %q", v.FolderName(gh.FolderID))
 	}
 	aws := find(v, "AWS Console")
-	if aws == nil || aws.OrganizationID != f.OrgID || aws.Login.Password != "aws-pa55" || v.CollectionName(aws.CollectionIDs[0]) != "Engineering" {
+	if aws == nil || aws.OrganizationID != f.OrgID || reveal(t, aws.Login.Password) != "aws-pa55" || v.CollectionName(aws.CollectionIDs[0]) != "Engineering" {
 		t.Errorf("AWS %+v", aws)
 	}
 	if v.OrganizationName(f.OrgID) != "Acme Inc." {
 		t.Errorf("organizations %+v", v.Organizations)
 	}
-	if c := find(v, "Visa"); c == nil || c.Card.Number != "4111111111111111" {
+	if c := find(v, "Visa"); c == nil || reveal(t, c.Card.Number) != "4111111111111111" || c.Card.Last4 != "1111" || reveal(t, c.Card.Code) != "123" {
 		t.Errorf("card %+v", c)
 	}
 	if g := find(v, "Google"); g == nil || len(g.Login.Passkeys) != 1 || g.Login.Passkeys[0].RpID != "google.com" {
 		t.Errorf("passkeys %+v", g)
 	}
-	if k := find(v, "Deploy key"); k == nil || k.SSHKey.Fingerprint != "SHA256:4k3yF1ngerPr1nt" {
+	if k := find(v, "Deploy key"); k == nil || k.SSHKey.Fingerprint != "SHA256:4k3yF1ngerPr1nt" || !strings.HasPrefix(reveal(t, k.SSHKey.PrivateKey), "-----BEGIN") {
 		t.Errorf("ssh key %+v", k)
+	}
+	if n := find(v, "Wi-Fi"); n == nil || !strings.HasPrefix(reveal(t, n.Notes), "Network: Analytical") {
+		t.Errorf("note %+v", n)
+	}
+}
+
+// reveal decrypts a secret, as what shows it does.
+func reveal(t *testing.T, s bw.Secret) string {
+	t.Helper()
+	v, err := s.Reveal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v
+}
+
+func TestSecretsOpenWhileUnlocked(t *testing.T) {
+	f := bwtest.Sample()
+	s, _ := bw.Open(f.Write(t))
+	key, _ := s.UnlockWithPassword(f.UserID, f.Password)
+	v, err := s.Decrypt(f.UserID, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gh, aws := find(v, "GitHub"), find(v, "AWS Console")
+	if b, err := gh.Login.Password.Open(); err != nil || string(b) != "gh-s3cret!" {
+		t.Fatalf("opened %q, %v", b, err)
+	}
+	// The key the vault decrypted with goes: the vault keeps its own.
+	key.Wipe()
+	if reveal(t, aws.Login.Password) != "aws-pa55" {
+		t.Fatal("the vault's key went with the caller's")
+	}
+	if uk, err := v.UserKey(); err != nil || len(uk) != 64 {
+		t.Fatalf("user key %d bytes, %v", len(uk), err)
+	}
+	// Locked, nothing opens.
+	v.Lock()
+	for _, sec := range []bw.Secret{gh.Login.Password, aws.Login.Password, find(v, "Wi-Fi").Notes} {
+		if _, err := sec.Reveal(); !errors.Is(err, bw.ErrLocked) {
+			t.Errorf("revealed, locked: %v", err)
+		}
+	}
+	if _, err := v.UserKey(); !errors.Is(err, bw.ErrLocked) {
+		t.Errorf("user key, locked: %v", err)
+	}
+	if !(bw.Secret{}).Empty() || gh.Login.Password.Empty() {
+		t.Error("Empty")
 	}
 }
 

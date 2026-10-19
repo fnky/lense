@@ -643,7 +643,7 @@ func TestSuggestions(t *testing.T) {
 
 func TestReprompt(t *testing.T) {
 	f := bwtest.Sample()
-	f.Add(bw.Item{Type: bw.TypeLogin, Name: "Bank", Reprompt: true, Login: &bw.Login{Username: "ada", Password: "b4nk"}}, false)
+	f.Add(bwtest.Item{Type: bw.TypeLogin, Name: "Bank", Reprompt: true, Login: &bwtest.Login{Username: "ada", Password: "b4nk"}}, false)
 	h := newHarness(t, f, true)
 	h.unlock()
 	h.tt.Type("bank")
@@ -705,7 +705,7 @@ func TestStoreChangesWhileUnlocked(t *testing.T) {
 	h.unlock()
 	h.tt.Type("git")
 	h.settle()
-	h.f.Add(bw.Item{Type: bw.TypeLogin, Name: "GitLab", Login: &bw.Login{Username: "ada"}}, false)
+	h.f.Add(bwtest.Item{Type: bw.TypeLogin, Name: "GitLab", Login: &bwtest.Login{Username: "ada"}}, false)
 	if err := os.WriteFile(h.desk.path, h.f.JSON(), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -1051,8 +1051,8 @@ func TestLeavingTheFieldsConcealsPasswords(t *testing.T) {
 
 func TestRevealOnlyTheFieldChosen(t *testing.T) {
 	f := bwtest.Sample()
-	f.Add(bw.Item{Type: bw.TypeLogin, Name: "Bank", Login: &bw.Login{Username: "ada", Password: "b4nk-pass"},
-		Fields: []bw.Field{{Type: bw.FieldHidden, Name: "PIN", Value: "8642"}}}, false)
+	f.Add(bwtest.Item{Type: bw.TypeLogin, Name: "Bank", Login: &bwtest.Login{Username: "ada", Password: "b4nk-pass"},
+		Fields: []bwtest.Field{{Type: bw.FieldHidden, Name: "PIN", Value: "8642"}}}, false)
 	h := newHarness(t, f, true)
 	h.unlock()
 	h.tt.Type("bank")
@@ -1178,7 +1178,7 @@ func TestWindowMaterial(t *testing.T) {
 func TestRowsFadeUnderThePinnedHeader(t *testing.T) {
 	f := bwtest.Sample()
 	for i := range 20 {
-		f.Add(bw.Item{Type: bw.TypeSecureNote, Name: "Note " + strconv.Itoa(i+10), Notes: "note"}, false)
+		f.Add(bwtest.Item{Type: bw.TypeSecureNote, Name: "Note " + strconv.Itoa(i+10), Notes: "note"}, false)
 	}
 	h := newHarness(t, f, true)
 	h.tt.SetVibrancy(true)
@@ -1477,5 +1477,46 @@ func TestVaultChevronsExpand(t *testing.T) {
 	h.click("Acme Inc.")
 	if h.a.cfg.Vault != h.f.OrgID || h.a.mode != modeResults {
 		t.Fatalf("vault %q, mode %v", h.a.cfg.Vault, h.a.mode)
+	}
+}
+
+func TestSecretsDecryptOnlyAsTheyShow(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.unlock()
+	h.tt.Type("git")
+	h.settle()
+	it := h.a.selected()
+	// Shown concealed, the password isn't decrypted: dots stand for it.
+	h.has("••••••••••")
+	if len(h.a.shownValues) != 0 {
+		t.Fatalf("decrypted to show concealed: %v", h.a.shownValues)
+	}
+	// Revealed, it decrypts once, and goes as the keys leave the fields.
+	h.key(0, ui.KeyRight)
+	h.key(0, ui.KeyDown)
+	h.key(0, ui.KeyRight)
+	h.has("gh-s3cret!")
+	if len(h.a.shownValues) != 1 {
+		t.Fatalf("shown %v", h.a.shownValues)
+	}
+	h.key(0, ui.KeyLeft)
+	h.key(0, ui.KeyLeft)
+	if h.a.shownValues != nil || h.tt.HasText("gh-s3cret!") {
+		t.Fatalf("still shown: %v", h.a.shownValues)
+	}
+	// Copied, it decrypts for the clipboard alone.
+	h.key(ui.Cmd|ui.Shift, ui.KeyC)
+	if h.sys.last() != "gh-s3cret!" || h.a.shownValues != nil {
+		t.Fatalf("copied %q, shown %v", h.sys.last(), h.a.shownValues)
+	}
+	// Locked, what was decrypted goes, and the secrets of the items open
+	// no more.
+	h.a.lock(true)
+	h.settle()
+	if h.a.codes != nil || h.a.shownValues != nil {
+		t.Fatal("decrypted values outlived the lock")
+	}
+	if _, err := it.Login.Password.Reveal(); !errors.Is(err, bw.ErrLocked) {
+		t.Fatalf("revealed, locked: %v", err)
 	}
 }

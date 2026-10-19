@@ -181,30 +181,38 @@ func (k SymmetricKey) Wipe() {
 	clear(k.MAC)
 }
 
-// Decrypt decrypts an AES string with k.
-func (k SymmetricKey) Decrypt(e EncString) ([]byte, error) {
+// verify checks that k encrypted e, by its MAC, without decrypting it.
+func (k SymmetricKey) verify(e EncString) error {
 	if !k.Valid() {
-		return nil, errors.New("bw: no key")
+		return errors.New("bw: no key")
 	}
 	switch e.Type {
 	case AesCbc256B64:
 		if len(k.MAC) != 0 {
 			// A key with a MAC key never decrypts strings without a MAC,
 			// which an attacker could otherwise forge.
-			return nil, ErrMAC
+			return ErrMAC
 		}
 	case AesCbc256HmacSha256B64:
 		if len(k.MAC) == 0 {
-			return nil, ErrMAC
+			return ErrMAC
 		}
 		m := hmac.New(sha256.New, k.MAC)
 		m.Write(e.IV)
 		m.Write(e.Data)
 		if subtle.ConstantTimeCompare(m.Sum(nil), e.MAC) != 1 {
-			return nil, ErrMAC
+			return ErrMAC
 		}
 	default:
-		return nil, fmt.Errorf("%w: type %d with a symmetric key", ErrUnsupported, e.Type)
+		return fmt.Errorf("%w: type %d with a symmetric key", ErrUnsupported, e.Type)
+	}
+	return nil
+}
+
+// Decrypt decrypts an AES string with k.
+func (k SymmetricKey) Decrypt(e EncString) ([]byte, error) {
+	if err := k.verify(e); err != nil {
+		return nil, err
 	}
 	block, err := aes.NewCipher(k.Enc)
 	if err != nil {
