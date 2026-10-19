@@ -137,7 +137,6 @@ func (a *app) vaultRow(c *ui.Context, k ink, v vaultChoice) {
 	switch {
 	case cursor:
 		row.Background(k.selected)
-		title, sub = k.onAccent, k.selMuted
 	case row.Hovered():
 		row.Background(k.hover)
 	}
@@ -220,7 +219,7 @@ func (a *app) rowView(c *ui.Context, k ink, i int) {
 	inDetails := chosen && a.mode == modeDetails
 	switch {
 	case inDetails:
-		b.Background(k.selected.Alpha(0.16))
+		b.Background(k.hover) // the keys are on its fields
 	case chosen:
 		b.Background(k.selected)
 	case b.Pressed():
@@ -238,9 +237,6 @@ func (a *app) rowView(c *ui.Context, k ink, i int) {
 		a.activate()
 	}
 	title, sub := k.text, k.muted
-	if chosen && !inDetails {
-		title, sub = k.onAccent, k.selMuted
-	}
 	if r.comp != nil {
 		b.Label(r.comp.Label).Children(func() {
 			ui.Row(c).Size(28, 28).Radius(7).Center().Background(sub.Alpha(0.12)).Children(func() {
@@ -573,10 +569,7 @@ func (a *app) fieldRow(c *ui.Context, k ink, it *bw.Item, f field, key string, r
 	}
 	switch {
 	case focused:
-		row.Background(k.accent.Alpha(0.12))
-		row.DrawOver(func(p *ui.Painter, r ui.Rect) {
-			p.Fill(ui.Rect{X: r.X, Y: r.Y, W: 3, H: r.H}, k.accent, 0)
-		})
+		row.Background(k.selected)
 		row.ScrollIntoView()
 	case row.Hovered():
 		row.Background(k.hover)

@@ -22,7 +22,7 @@ type ink struct {
 	accent, onAccent   ui.Color
 	bg, pane, card     ui.Color
 	danger, warn, okay ui.Color
-	selected, selMuted ui.Color
+	selected           ui.Color // what is chosen: translucent gray, as Raycast's
 	// chrome is under the bars, raised under what floats over the
 	// window: dialogs, menus, Large Type.
 	chrome, raised ui.Color
@@ -56,8 +56,10 @@ func inkOf(t *ui.Theme) ink {
 		k.warn = ui.Hex("#F0B44C")
 		k.okay = ui.Hex("#4CCF7F")
 	}
-	k.selected = k.accent
-	k.selMuted = k.onAccent.Alpha(0.78)
+	k.selected = ui.RGBA(0, 0, 0, 0.07)
+	if t.Dark {
+		k.selected = ui.RGBA(255, 255, 255, 0.1)
+	}
 	k.chrome, k.raised = k.bg, k.bg
 	return k
 }
