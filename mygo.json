@@ -1,6 +1,6 @@
 {
-  "name": "Uma",
-  "identifier": "com.example.uma",
+  "name": "Bitwarden Mini",
+  "identifier": "com.example.bitwarden-mini",
   "version": "0.1.0",
   "out": "build",
   "macos": {
