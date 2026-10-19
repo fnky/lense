@@ -103,6 +103,18 @@ func keySymbols(accel string) string {
 		key = "⇥"
 	case "backspace":
 		key = "⌫"
+	case "escape", "esc":
+		key = "esc"
+	case "delete":
+		key = "⌦"
+	case "pageup":
+		key = "⇞"
+	case "pagedown":
+		key = "⇟"
+	case "home":
+		key = "↖"
+	case "end":
+		key = "↘"
 	}
 	return mods + key
 }

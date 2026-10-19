@@ -51,6 +51,9 @@ type system interface {
 	// pageURL returns the address of the page a browser shows: run it in
 	// the background.
 	pageURL(ctx context.Context, browser macos.App) string
+	// fieldFocused reports whether a text field has the keyboard focus in
+	// an app, which Return fills then.
+	fieldFocused(app macos.App) bool
 	show()
 	hide()
 	openDetail(id string)
@@ -157,9 +160,19 @@ type app struct {
 	search ui.Handle
 	// searchSel is whether some of the search is selected, which
 	// Command-C copies then.
-	searchSel bool
-	caretEnd  bool // puts the caret after the search, which changed
-	front     front
+	searchSel   bool
+	searchCaret int  // where the search's caret is, in runes
+	caretEnd    bool // puts the caret after the search, which changed
+	front       front
+	// mode is where the keys act: on the results, on the fields of the
+	// item chosen (fieldSel the one they are on), or on the vaults
+	// (vaultCursor the one they are on, vaultOpen those showing what they
+	// hold).
+	mode        mode
+	fieldSel    int
+	vaultCursor string
+	vaultOpen   map[string]bool
+	large       *largeType
 	// reveal shows the secrets of an item; reprompted is the items whose
 	// master password was asked for, as their owners asked.
 	reveal     map[string]bool
@@ -180,9 +193,12 @@ type app struct {
 	holdOpen int
 	refocus  func()
 
-	// Settings.
-	recording   bool
-	shortcutErr string
+	// Settings: the key of an action being recorded, by its ID, and which
+	// of its keys (one past them to add one).
+	recordID    string
+	recordIndex int
+	keyErr      string
+	keyErrID    string
 
 	// exit quits the app.
 	exit func()
@@ -477,6 +493,7 @@ func (a *app) lock(hard bool) {
 	}
 	a.locked = true
 	a.query, a.rows, a.sel = "", nil, -1
+	a.mode, a.fieldSel, a.large = modeResults, 0, nil
 	a.reveal, a.reprompted = map[string]bool{}, map[string]bool{}
 	a.prob, a.confirm, a.flash = nil, nil, ""
 	a.tried = false
@@ -689,27 +706,42 @@ func (a *app) unlockPassword() {
 
 // --- The items ---
 
-// vaultFilter reports whether the item is in the vault chosen.
+// inVault reports whether the item is in the vault chosen, or its folder
+// or collection.
 func (a *app) inVault(it *bw.Item) bool {
-	switch a.cfg.Vault {
-	case "":
+	v := a.cfg.Vault
+	switch {
+	case v == "":
 		return true
-	case "personal":
+	case v == "personal":
 		return it.OrganizationID == ""
+	case strings.HasPrefix(v, "folder:"):
+		return it.OrganizationID == "" && it.FolderID == strings.TrimPrefix(v, "folder:")
+	case strings.HasPrefix(v, "collection:"):
+		return slices.Contains(it.CollectionIDs, strings.TrimPrefix(v, "collection:"))
 	}
-	return it.OrganizationID == a.cfg.Vault
+	return it.OrganizationID == v
 }
 
-// vaultName names the vault chosen.
+// vaultName names the vault chosen, or its folder or collection.
 func (a *app) vaultName() string {
-	switch a.cfg.Vault {
-	case "":
+	v := a.cfg.Vault
+	switch {
+	case v == "":
 		return "All Vaults"
-	case "personal":
+	case v == "personal":
 		return "My Vault"
-	}
-	if a.vault != nil {
-		if n := a.vault.OrganizationName(a.cfg.Vault); n != "" {
+	case a.vault == nil:
+	case strings.HasPrefix(v, "folder:"):
+		if n := a.vault.FolderName(strings.TrimPrefix(v, "folder:")); n != "" {
+			return n
+		}
+	case strings.HasPrefix(v, "collection:"):
+		if n := a.vault.CollectionName(strings.TrimPrefix(v, "collection:")); n != "" {
+			return n
+		}
+	default:
+		if n := a.vault.OrganizationName(v); n != "" {
 			return n
 		}
 	}
@@ -852,7 +884,7 @@ func (a *app) choose(i int) {
 		return
 	}
 	if i != a.sel {
-		a.sel = i
+		a.sel, a.fieldSel = i, 0
 		a.prob = nil
 	}
 	a.list.ScrollIntoView(i)
@@ -866,30 +898,36 @@ func (a *app) selected() *bw.Item {
 	return nil
 }
 
+// queryChanged searches anew: what is typed goes back to the results,
+// from the fields or the vaults.
 func (a *app) queryChanged() {
-	a.prob = nil
+	a.prob, a.mode = nil, modeResults
 	a.rebuild(false)
 }
 
-// escape clears what is typed, else closes what is open, else hides the
-// window.
+// escape puts away what shows over the items, else clears the search,
+// else closes the window.
 func (a *app) escape() {
 	switch {
+	case a.large != nil:
+		a.large = nil
 	case a.confirm != nil:
 		a.closeConfirm()
 	case a.prob != nil:
 		a.prob = nil
-	case a.page == pageSettings && a.recording:
-		a.recording = false
+	case a.mode == modeVaults:
+		a.mode = modeResults
+	case a.page == pageSettings && a.recordID != "":
+		a.recordID = ""
 	case a.page == pageSettings && a.configured():
 		a.page = pageItems
 	case a.page == pageSetup && a.configured():
 		a.page = pageSettings
 	case a.query != "" && a.unlocked():
-		a.query = ""
+		a.query, a.mode = "", modeResults
 		a.rebuild(false)
 	default:
-		a.sys.hide()
+		a.close()
 	}
 }
 
@@ -905,10 +943,8 @@ func (a *app) activate() {
 		a.query, a.caretEnd = r.comp.Query, true
 		a.rebuild(false)
 		a.search.Focus()
-	case r.item != nil && r.item.Login != nil && r.item.Login.Password != "" && a.front.app.PID != 0:
-		a.fill(r.item, false)
 	case r.item != nil:
-		a.copyPrimary()
+		a.defaultAction(r.item)
 	}
 }
 
@@ -1039,8 +1075,11 @@ func (a *app) copyField(it *bw.Item, f field) {
 	do()
 }
 
-func (a *app) copyPrimary() {
-	it := a.selected()
+func (a *app) copyPrimary()  { a.copyPrimaryOf(a.selected()) }
+func (a *app) copyPassword() { a.copyPasswordOf(a.selected()) }
+func (a *app) copyCode()     { a.copyCodeOf(a.selected()) }
+
+func (a *app) copyPrimaryOf(it *bw.Item) {
 	if it == nil {
 		return
 	}
@@ -1051,8 +1090,7 @@ func (a *app) copyPrimary() {
 	a.say("%s has nothing to copy", it.Name)
 }
 
-func (a *app) copyPassword() {
-	it := a.selected()
+func (a *app) copyPasswordOf(it *bw.Item) {
 	if it == nil {
 		return
 	}
@@ -1063,8 +1101,7 @@ func (a *app) copyPassword() {
 	a.say("%s has no password", it.Name)
 }
 
-func (a *app) copyCode() {
-	it := a.selected()
+func (a *app) copyCodeOf(it *bw.Item) {
 	if it == nil {
 		return
 	}

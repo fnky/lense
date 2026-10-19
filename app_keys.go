@@ -1,0 +1,362 @@
+package main
+
+import (
+	"strings"
+
+	"bitwarden-mini/internal/bw"
+	"bitwarden-mini/internal/macos"
+
+	"github.com/egoist/mygo/ui"
+)
+
+// searchKey takes the keys of Quick Access in the search, which has the
+// keyboard: the search edits with those it leaves. Command-C copies the
+// search's text while some of it is selected.
+func (a *app) searchKey(ev ui.InputEvent) bool {
+	if ev.Kind != ui.InputKeyDown {
+		return false
+	}
+	if a.searchSel && ev.Mods == ui.Super && ev.Key == ui.KeyC {
+		return false
+	}
+	return a.press(ev.Mods, ev.Key)
+}
+
+// press does what a key does in the mode Quick Access is in, reporting
+// whether it did something.
+func (a *app) press(mods ui.Modifiers, key ui.Key) bool {
+	if a.large != nil {
+		a.large = nil // any key puts Large Type away
+		return true
+	}
+	if a.confirm != nil {
+		return false
+	}
+	id := a.cfg.actionFor(a.mode, mods, key)
+	if id == "" {
+		// Typing goes back to the search, from the fields or the vaults.
+		if a.mode != modeResults && mods&(ui.Super|ui.Ctrl) == 0 && types(key) {
+			a.mode = modeResults
+		}
+		return false
+	}
+	return a.run(id)
+}
+
+// types reports whether a key types text into the search.
+func types(key ui.Key) bool {
+	name, ok := keyNames[key]
+	return ok && (len(name) == 1 || key == ui.KeySpace || key == ui.KeyBackspace)
+}
+
+// run does an action, reporting whether it did: some leave their key to
+// the search where it edits, as Right before the end of what is typed.
+func (a *app) run(id string) bool {
+	switch id {
+	case "previous":
+		a.move(-1)
+	case "next":
+		a.move(1)
+	case "details":
+		if a.selected() == nil || !a.caretAtEnd() {
+			return false
+		}
+		a.enterDetails()
+	case "default":
+		a.activate()
+	case "complete":
+		if a.sel < 0 || a.sel >= len(a.rows) || a.rows[a.sel].comp == nil {
+			return false
+		}
+		a.activate()
+	case "field-previous":
+		a.moveField(-1)
+	case "field-next":
+		a.moveField(1)
+	case "field-reveal":
+		a.revealField()
+	case "field-back":
+		a.mode = modeResults
+	case "field-copy":
+		if it, f, ok := a.focusedField(); ok {
+			a.copyField(it, f)
+		}
+	case "vault-previous":
+		a.moveVault(-1)
+	case "vault-next":
+		a.moveVault(1)
+	case "vault-expand":
+		a.expandVault()
+	case "vault-collapse":
+		a.collapseVault()
+	case "vault-choose":
+		a.chooseVault(a.vaultCursor)
+		a.mode = modeResults
+	case "copy-username":
+		a.copyPrimary()
+	case "copy-password":
+		a.copyPassword()
+	case "copy-code":
+		a.copyCode()
+	case "open-fill":
+		a.fill(a.selected(), true)
+	case "open-window":
+		a.openDetail()
+	case "open-bitwarden":
+		a.openInBitwarden()
+	case "choose-vault":
+		a.openVaults()
+	case "search":
+		a.mode = modeResults
+		a.search.Focus()
+	case "lock":
+		a.lock(false)
+	case "close":
+		a.escape()
+	case "hide":
+		a.close()
+	case "settings":
+		a.openSettings()
+	default:
+		if n, ok := strings.CutPrefix(id, "vault-"); ok && len(n) == 1 && n[0] >= '1' && n[0] <= '9' {
+			a.jumpVault(int(n[0] - '0'))
+			return true
+		}
+		return false
+	}
+	return true
+}
+
+// caretAtEnd reports whether the search's caret is after all it holds,
+// where Right goes to the fields rather than moving it.
+func (a *app) caretAtEnd() bool {
+	return !a.searchSel && a.searchCaret >= len([]rune(a.query))
+}
+
+// close puts Quick Access away, and forgets what it showed for the moment:
+// secrets revealed, master passwords asked for. The vault stays unlocked.
+func (a *app) close() {
+	a.reveal, a.reprompted = map[string]bool{}, map[string]bool{}
+	a.large, a.mode, a.fieldSel = nil, modeResults, 0
+	a.sys.hide()
+}
+
+// --- The fields of the item chosen ---
+
+func (a *app) enterDetails() {
+	it := a.selected()
+	if it == nil || len(a.fieldsOf(it)) == 0 {
+		return
+	}
+	a.mode, a.fieldSel = modeDetails, 0
+}
+
+func (a *app) moveField(n int) {
+	it := a.selected()
+	if it == nil {
+		return
+	}
+	a.fieldSel = min(max(a.fieldSel+n, 0), len(a.fieldsOf(it))-1)
+}
+
+// focusedField returns the field the keys are on in the details, its
+// value read now: a one-time password's changes.
+func (a *app) focusedField() (*bw.Item, field, bool) {
+	it := a.selected()
+	if it == nil || a.mode != modeDetails {
+		return nil, field{}, false
+	}
+	fs := a.fieldsOf(it)
+	if a.fieldSel < 0 || a.fieldSel >= len(fs) {
+		return nil, field{}, false
+	}
+	f := fs[a.fieldSel]
+	if f.kind == "totp" {
+		f.value, _, _ = a.code(it)
+	}
+	return it, f, true
+}
+
+// revealField shows a secret field, then shows it in Large Type; other
+// fields go to Large Type at once.
+func (a *app) revealField() {
+	it, f, ok := a.focusedField()
+	if !ok {
+		return
+	}
+	if f.secret && f.kind != "totp" && !a.reveal[it.ID] {
+		a.guarded(it, func() { a.reveal[it.ID] = true })
+		return
+	}
+	a.guarded(it, func() { a.large = &largeType{label: f.label, value: f.value, item: it.Name} })
+}
+
+// largeType is a value shown big enough to read across a room, or to type
+// into another device.
+type largeType struct {
+	label, value, item string
+}
+
+// --- Choosing the vault ---
+
+// vaultChoice is a vault to search, or a folder or collection in one.
+type vaultChoice struct {
+	id     string // "" all, "personal", an organization's ID, "folder:<id>", "collection:<id>"
+	name   string
+	parent string
+	depth  int
+	kids   bool
+	num    int // the n of Cmd-n, or 0
+}
+
+// vaultTree lists the vaults, with the folders of the personal vault and
+// the collections of organizations under them. Command and a digit
+// choose the vaults, then what they hold, in order.
+func (a *app) vaultTree() []vaultChoice {
+	out := []vaultChoice{{id: "", name: "All Vaults"}}
+	if a.vault == nil {
+		out[0].num = 1
+		return out
+	}
+	out = append(out, vaultChoice{id: "personal", name: "My Vault", kids: len(a.vault.Folders) > 0})
+	for _, f := range a.vault.Folders {
+		out = append(out, vaultChoice{id: "folder:" + f.ID, name: f.Name, parent: "personal", depth: 1})
+	}
+	for _, o := range a.vault.Organizations {
+		i := len(out)
+		out = append(out, vaultChoice{id: o.ID, name: o.Name})
+		for _, c := range a.vault.Collections {
+			if c.OrganizationID == o.ID {
+				out = append(out, vaultChoice{id: "collection:" + c.ID, name: c.Name, parent: o.ID, depth: 1})
+				out[i].kids = true
+			}
+		}
+	}
+	n := 0
+	for _, top := range []bool{true, false} {
+		for i := range out {
+			if (out[i].depth == 0) == top && n < 9 {
+				n++
+				out[i].num = n
+			}
+		}
+	}
+	return out
+}
+
+// visibleVaults are the choices the selector shows: those of vaults
+// opened.
+func (a *app) visibleVaults() []vaultChoice {
+	var out []vaultChoice
+	for _, v := range a.vaultTree() {
+		if v.depth == 0 || a.vaultOpen[v.parent] {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func (a *app) openVaults() {
+	if a.mode == modeVaults {
+		a.mode = modeResults
+		return
+	}
+	a.mode, a.vaultCursor = modeVaults, a.cfg.Vault
+	if a.vaultOpen == nil {
+		a.vaultOpen = map[string]bool{}
+	}
+	for _, v := range a.vaultTree() {
+		if v.id == a.cfg.Vault && v.parent != "" {
+			a.vaultOpen[v.parent] = true
+		}
+	}
+}
+
+func (a *app) vaultIndex(vs []vaultChoice) int {
+	for i, v := range vs {
+		if v.id == a.vaultCursor {
+			return i
+		}
+	}
+	return 0
+}
+
+func (a *app) moveVault(n int) {
+	vs := a.visibleVaults()
+	i := min(max(a.vaultIndex(vs)+n, 0), len(vs)-1)
+	a.vaultCursor = vs[i].id
+}
+
+// expandVault shows what the vault holds, or goes to the first of it.
+func (a *app) expandVault() {
+	vs := a.visibleVaults()
+	i := a.vaultIndex(vs)
+	switch v := vs[i]; {
+	case v.kids && !a.vaultOpen[v.id]:
+		a.vaultOpen[v.id] = true
+	case v.kids && i+1 < len(vs):
+		a.vaultCursor = vs[i+1].id
+	}
+}
+
+// collapseVault hides what the vault holds, goes to the vault of a folder
+// or collection, or back to the results.
+func (a *app) collapseVault() {
+	vs := a.visibleVaults()
+	switch v := vs[a.vaultIndex(vs)]; {
+	case v.kids && a.vaultOpen[v.id]:
+		a.vaultOpen[v.id] = false
+	case v.parent != "":
+		a.vaultCursor = v.parent
+	default:
+		a.mode = modeResults
+	}
+}
+
+// jumpVault chooses the vault of Command-n.
+func (a *app) jumpVault(n int) {
+	for _, v := range a.vaultTree() {
+		if v.num == n {
+			a.chooseVault(v.id)
+			a.mode = modeResults
+			return
+		}
+	}
+	a.say("No vault has ⌘%d", n)
+}
+
+// --- Return ---
+
+// defaultAction is Return's: it fills a login into the app the user was
+// in when that app has a field to fill, as a browser's page, and copies
+// its password otherwise; for the other items, what they hold first.
+func (a *app) defaultAction(it *bw.Item) {
+	if l := it.Login; l != nil && l.Password != "" {
+		if t := a.front.app; t.PID != 0 && (macos.IsBrowser(t.BundleID) || a.sys.fieldFocused(t)) {
+			a.fill(it, false)
+			return
+		}
+		a.copyField(it, field{label: "password", value: l.Password, secret: true})
+		return
+	}
+	if f, ok := primary(it); ok {
+		a.copyField(it, f)
+		return
+	}
+	a.say("%s has nothing to copy", it.Name)
+}
+
+// fillTarget names where Return fills, or "".
+func (a *app) fillTarget(it *bw.Item) string {
+	t := a.front.app
+	if it == nil || it.Login == nil || it.Login.Password == "" || t.PID == 0 {
+		return ""
+	}
+	if macos.IsBrowser(t.BundleID) || a.sys.fieldFocused(t) {
+		if t.Name == "" {
+			return "the app"
+		}
+		return t.Name
+	}
+	return ""
+}

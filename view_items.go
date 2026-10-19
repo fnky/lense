@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"bitwarden-mini/internal/bw"
 	"bitwarden-mini/internal/search"
@@ -14,21 +15,9 @@ import (
 )
 
 // itemsView is Quick Access: the search, the items found, and the
-// details of the one chosen.
+// details of the one chosen. The search keeps the keyboard: the keys act
+// on the results, the fields of the item or the vaults, as the mode says.
 func (a *app) itemsView(c *ui.Context, k ink) {
-	// The keys of Quick Access. The search takes the copying keys itself,
-	// as it would edit with them: elsewhere, the window does.
-	debugReg = !a.search.Focused(c)
-	if !a.search.Focused(c) {
-		c.OnShortcut(ui.Cmd, ui.KeyC, a.copyPrimary)
-		c.OnShortcut(ui.Cmd|ui.Shift, ui.KeyC, a.copyPassword)
-		c.OnShortcut(ui.Cmd|ui.Alt, ui.KeyC, a.copyCode)
-	}
-	c.OnShortcut(ui.Cmd, ui.KeyO, a.openDetail)
-	c.OnShortcut(ui.Cmd|ui.Shift, ui.KeyO, a.openInBitwarden)
-	c.OnShortcut(ui.Alt, ui.KeyEnter, func() { a.fill(a.selected(), true) })
-	c.OnShortcut(ui.Cmd, ui.KeyF, func() { a.search.Focus() })
-
 	ui.Column(c).Fill().Children(func() {
 		a.header(c, k)
 		ui.Row(c).Grow(1).AlignItems(ui.Stretch).MinHeight(0).Children(func() {
@@ -46,6 +35,12 @@ func (a *app) itemsView(c *ui.Context, k ink) {
 		})
 		a.footer(c, k)
 	})
+	if a.mode == modeVaults {
+		a.vaultMenu(c, k)
+	}
+	if a.large != nil {
+		a.largeTypeView(c, k)
+	}
 	if a.confirm != nil {
 		a.confirmView(c, k)
 	}
@@ -61,86 +56,107 @@ func (a *app) header(c *ui.Context, k ink) {
 		if a.unlocked() {
 			in.AutoFocus()
 		}
-		in.OnShortcut(0, ui.KeyDown, func() { a.move(1) })
-		in.OnShortcut(0, ui.KeyUp, func() { a.move(-1) })
-		in.OnShortcut(0, ui.KeyPageDown, func() { a.move(8) })
-		in.OnShortcut(0, ui.KeyPageUp, func() { a.move(-8) })
 		if a.caretEnd {
 			n := len([]rune(a.query))
 			in.SetTextSelection(n, n)
 			a.caretEnd = false
 		}
-		if start, end := in.TextSelection(); start != end {
-			a.searchSel = true
-		} else {
-			a.searchSel = false
-		}
+		start, end := in.TextSelection()
+		a.searchSel, a.searchCaret = start != end, end
 		in.HandleInput(a.searchKey)
-		in.OnShortcut(ui.Cmd, ui.KeyDown, func() { a.move(len(a.rows)) })
-		in.OnShortcut(ui.Cmd, ui.KeyUp, func() { a.move(-len(a.rows)) })
-		in.OnShortcut(0, ui.KeyTab, func() {
-			// Complete the filter chosen, as a shell completes.
-			if a.sel >= 0 && a.sel < len(a.rows) && a.rows[a.sel].comp != nil {
-				a.activate()
-			}
-		})
 		in.OnChange(a.queryChanged)
 		a.vaultPicker(c.Key("vaults"), k)
-		iconButton(c.Key("settings"), k, iconSettings, "Settings (⌘,)").OnClick(a.openSettings)
+		iconButton(c.Key("settings"), k, iconSettings, "Settings ("+a.cfg.keyHint("settings")+")").OnClick(a.openSettings)
 	})
 }
 
-// searchKey takes the keys the search would otherwise edit with: Return,
-// and Command-C but to copy what is selected of the search.
-func (a *app) searchKey(ev ui.InputEvent) bool {
-	if ev.Kind != ui.InputKeyDown {
-		return false
-	}
-	switch {
-	case ev.Key == ui.KeyEnter && ev.Mods == 0:
-		a.activate()
-	case ev.Key == ui.KeyC && ev.Mods == ui.Cmd && !a.searchSel:
-		a.copyPrimary()
-	case ev.Key == ui.KeyC && ev.Mods == ui.Cmd|ui.Shift:
-		a.copyPassword()
-	case ev.Key == ui.KeyC && ev.Mods == ui.Cmd|ui.Alt:
-		a.copyCode()
-	default:
-		return false
-	}
-	return true
-}
-
-// vaultPicker chooses the vault to search: all, the personal one, or an
-// organization's.
+// vaultPicker shows the vault searched, and opens the vault selector.
 func (a *app) vaultPicker(c *ui.Context, k ink) {
 	b := ui.ButtonBase(c).Padding(5, 8, 5, 9).Gap(6).Radius(8).AlignItems(ui.Center).
-		FontSize(12).FontWeight(500).TextColor(k.muted).Label("Vault").Tooltip("Choose the vault to search")
-	if b.Hovered() || b.Pressed() {
+		FontSize(12).FontWeight(500).TextColor(k.muted).Label("Vault").
+		Tooltip("Choose the vault to search (" + a.cfg.keyHint("choose-vault") + ")")
+	if b.Hovered() || b.Pressed() || a.mode == modeVaults {
 		b.Background(k.hover).TextColor(k.text)
 	}
+	b.OnClick(func() {
+		a.openVaults()
+		a.search.Focus()
+	})
 	b.Children(func() {
-		ic := iconVault
-		if a.cfg.Vault != "" && a.cfg.Vault != "personal" {
-			ic = iconOrg
-		}
-		ui.Icon(c, ic).FontSize(14)
+		ui.Icon(c, vaultIcon(a.cfg.Vault)).FontSize(14)
 		ui.Text(c, a.vaultName()).NoWrap().MaxWidth(150).SingleLine()
 		ui.Icon(c, iconChevron).FontSize(11)
 	})
-	b.Menu(func(m *ui.Menu) {
-		if m.Item("All Vaults").Checked(a.cfg.Vault == "").Chosen() {
-			a.chooseVault("")
+}
+
+func vaultIcon(id string) *ui.SVG {
+	switch {
+	case id == "" || id == "personal":
+		return iconVault
+	case strings.HasPrefix(id, "folder:"):
+		return iconFolder
+	case strings.HasPrefix(id, "collection:"):
+		return iconFolder
+	}
+	return iconOrg
+}
+
+// vaultMenu is the vault selector: the vaults, and their folders and
+// collections, which the arrows go through and Return chooses.
+func (a *app) vaultMenu(c *ui.Context, k ink) {
+	// A press beside it puts it away.
+	ui.Box(c.Key("vault-backdrop")).Absolute().Top(0).Left(0).Right(0).Bottom(0).OnClick(func() {
+		a.mode = modeResults
+		a.search.Focus()
+	})
+	panel := ui.Column(c.Key("vault-menu")).Absolute().Top(52).Right(46).Width(300).MaxHeight(windowHeight-100).
+		Padding(6).Radius(12).Background(k.bg).Border(1, k.line).Shadow(0, 10, 30, 0, ui.RGBA(0, 0, 0, 0.25)).
+		Label("Vaults")
+	panel.Children(func() {
+		ui.Scroll(c.Key("vault-scroll")).Gap(1).Children(func() {
+			for _, v := range a.visibleVaults() {
+				a.vaultRow(c.Key("v:"+v.id), k, v)
+			}
+		})
+	})
+}
+
+func (a *app) vaultRow(c *ui.Context, k ink, v vaultChoice) {
+	cursor := v.id == a.vaultCursor
+	row := ui.Row(c).Padding(6, 8, 6, 8+float32(v.depth)*18).Gap(8).Radius(7).AlignItems(ui.Center).Label(v.name)
+	title, sub := k.text, k.faint
+	switch {
+	case cursor:
+		row.Background(k.selected)
+		title, sub = k.onAccent, k.selMuted
+	case row.Hovered():
+		row.Background(k.hover)
+	}
+	if cursor {
+		row.ScrollIntoView()
+	}
+	row.OnClick(func() {
+		a.chooseVault(v.id)
+		a.mode = modeResults
+		a.search.Focus()
+	})
+	row.Children(func() {
+		switch {
+		case v.kids && a.vaultOpen[v.id]:
+			ui.Icon(c, iconChevron).FontSize(11).TextColor(sub)
+		case v.kids:
+			ui.Icon(c, iconChevron).FontSize(11).TextColor(sub).Rotate(-90)
+		default:
+			ui.Box(c).Size(11, 11)
 		}
-		m.Separator()
-		if m.Item("My Vault").Checked(a.cfg.Vault == "personal").Chosen() {
-			a.chooseVault("personal")
+		ui.Icon(c, vaultIcon(v.id)).FontSize(14).TextColor(title)
+		ui.Text(c, v.name).TextColor(title).SingleLine().Grow(1).Shrink(1)
+		if v.id == a.cfg.Vault {
+			ui.Icon(c, iconCheck).FontSize(13).TextColor(title)
 		}
-		if a.vault != nil {
-			for _, o := range a.vault.Organizations {
-				if m.Item(o.Name).Checked(a.cfg.Vault == o.ID).Chosen() {
-					a.chooseVault(o.ID)
-				}
+		if v.num > 0 {
+			if hint := a.cfg.keyHint(fmt.Sprintf("vault-%d", v.num)); hint != "" {
+				ui.Text(c, hint).FontSize(11).TextColor(sub).NoWrap()
 			}
 		}
 	})
@@ -166,7 +182,7 @@ func (a *app) itemList(c *ui.Context, k ink) {
 				ui.Text(c, "“"+q.Bad[0]+"” is not a filter. Type = to see them.").FontSize(12).TextColor(k.muted).TextAlign(ui.Center).LineHeight(1.35)
 			case a.cfg.Vault != "":
 				ui.Text(c, "Only "+a.vaultName()+" is searched.").FontSize(12).TextColor(k.muted)
-				textButton(c.Key("all"), k, "Search All Vaults", nil).OnClick(func() { a.chooseVault("") })
+				textButton(c.Key("all"), k, "Search All Vaults", nil).OnClick(func() { a.chooseVault(""); a.search.Focus() })
 			}
 		})
 	})
@@ -180,9 +196,13 @@ func (a *app) rowView(c *ui.Context, k ink, i int) {
 		})
 		return
 	}
+	// The rows take the pointer, not the keyboard, which the search keeps.
 	chosen := i == a.sel
-	b := ui.ButtonBase(c).Padding(7, 10).Gap(10).Radius(8).AlignItems(ui.Center).Selected(chosen)
+	b := ui.Row(c).Padding(7, 10).Gap(10).Radius(8).AlignItems(ui.Center).Selected(chosen)
+	inDetails := chosen && a.mode == modeDetails
 	switch {
+	case inDetails:
+		b.Background(k.selected.Alpha(0.16))
 	case chosen:
 		b.Background(k.selected)
 	case b.Pressed():
@@ -191,13 +211,16 @@ func (a *app) rowView(c *ui.Context, k ink, i int) {
 		b.Background(k.hover)
 	}
 	if b.Pressed() || b.Clicked() {
+		if i != a.sel {
+			a.mode = modeResults
+		}
 		a.choose(i)
 	}
 	if b.DoubleClicked() {
 		a.activate()
 	}
 	title, sub := k.text, k.muted
-	if chosen {
+	if chosen && !inDetails {
 		title, sub = k.onAccent, k.selMuted
 	}
 	if r.comp != nil {
@@ -260,10 +283,16 @@ func (a *app) noItem(c *ui.Context, k ink) {
 	})
 }
 
-// footer shows what the keys do, or the message of what just happened.
+// footer shows what the keys do where they act, or the message of what
+// just happened.
 func (a *app) footer(c *ui.Context, k ink) {
+	hint := func(id, label string) {
+		if h := a.cfg.keyHint(id); h != "" {
+			keycap(c, k, h, label)
+		}
+	}
 	ui.Row(c).Height(36).Padding(0, 14).Gap(14).AlignItems(ui.Center).BorderWidth(1, 0, 0, 0).BorderColor(k.line).
-		Background(k.pane).Children(func() {
+		Background(k.pane).Clip().Children(func() {
 		if a.flashing(c) {
 			ui.Icon(c, iconCheck).FontSize(13).TextColor(k.okay)
 			ui.Text(c, a.flash).FontSize(12).TextColor(k.text).SingleLine().Shrink(1)
@@ -271,37 +300,51 @@ func (a *app) footer(c *ui.Context, k ink) {
 		}
 		it := a.selected()
 		switch {
-		case it == nil && a.sel >= 0:
-			keycap(c, k, "↩", "Use filter")
-		case it == nil:
-			keycap(c, k, "esc", "Close")
-		default:
-			if it.Login != nil && it.Login.Password != "" && a.front.app.PID != 0 {
-				name := a.front.app.Name
-				if name == "" {
-					name = "app"
+		case a.mode == modeVaults:
+			hint("vault-choose", "Search the vault")
+			hint("vault-expand", "Show collections")
+			hint("vault-collapse", "Back")
+		case a.mode == modeDetails && it != nil:
+			if _, f, ok := a.focusedField(); ok {
+				hint("field-copy", "Copy "+f.label)
+				if f.secret && f.kind != "totp" && !a.reveal[it.ID] {
+					hint("field-reveal", "Reveal")
+				} else {
+					hint("field-reveal", "Large Type")
 				}
-				keycap(c, k, "↩", "Fill in "+name)
+			}
+			hint("field-back", "Back")
+		case it == nil && a.sel >= 0:
+			hint("default", "Use filter")
+		case it == nil:
+			hint("close", "Close")
+		default:
+			if name := a.fillTarget(it); name != "" {
+				hint("default", "Fill in "+name)
+			} else if it.Login != nil && it.Login.Password != "" {
+				hint("default", "Copy password")
 			}
 			if f, ok := primary(it); ok {
-				keycap(c, k, "⌘C", "Copy "+f.label)
+				hint("copy-username", "Copy "+f.label)
 			}
 			if f, ok := secretOf(it); ok {
-				keycap(c, k, "⇧⌘C", "Copy "+f.label)
+				hint("copy-password", "Copy "+f.label)
 			}
 			if _, _, ok := a.code(it); ok {
-				keycap(c, k, "⌥⌘C", "Copy code")
+				hint("copy-code", "Copy code")
 			}
+			hint("details", "Fields")
 		}
 		ui.Spacer(c)
-		if it != nil {
-			textButton(c.Key("open-bw"), k, "Open in Bitwarden", iconExternal).Tooltip("⇧⌘O").OnClick(a.openInBitwarden)
+		if it != nil && a.mode != modeVaults {
+			textButton(c.Key("open-bw"), k, "Open in Bitwarden", iconExternal).Tooltip(a.cfg.keyHint("open-bitwarden")).
+				OnClick(a.openInBitwarden)
 		}
 	})
 }
 
 // details shows the fields of an item, which a click copies, a drag drops
-// into another app, and Return or Space copy from the keyboard. In its own
+// into another app, and the keys go through after Right. In its own
 // window, own is true.
 func (a *app) details(c *ui.Context, k ink, it *bw.Item, own bool) {
 	reveal := a.reveal[it.ID] || c.Modifiers()&ui.Alt != 0 && !it.Reprompt
@@ -318,7 +361,8 @@ func (a *app) details(c *ui.Context, k ink, it *bw.Item, own bool) {
 				ui.Text(c, a.where(it)).FontSize(12).TextColor(k.muted).SingleLine()
 			})
 			if !own {
-				iconButton(c.Key("window"), k, iconExternal, "Open in Window (⌘O)").OnClick(func() { a.sys.openDetail(it.ID) })
+				iconButton(c.Key("window"), k, iconExternal, "Open in Window ("+a.cfg.keyHint("open-window")+")").
+					OnClick(func() { a.sys.openDetail(it.ID) })
 			}
 		})
 		if it.Err != nil {
@@ -328,7 +372,8 @@ func (a *app) details(c *ui.Context, k ink, it *bw.Item, own bool) {
 		if len(fields) > 0 {
 			group(c.Key("fields"), k, func() {
 				for i, f := range fields {
-					a.fieldRow(c.Key(i), k, it, f, reveal, i > 0)
+					focused := !own && a.mode == modeDetails && a.fieldSel == i
+					a.fieldRow(c.Key(i), k, it, f, reveal, i > 0, focused)
 				}
 			})
 		}
@@ -350,11 +395,6 @@ func (a *app) details(c *ui.Context, k ink, it *bw.Item, own bool) {
 						}
 					})
 				}
-			})
-		}
-		if it.Notes != "" && it.Type != bw.TypeSecureNote {
-			group(c.Key("notes"), k, func() {
-				a.fieldRow(c.Key("n"), k, it, field{label: "notes", value: it.Notes, kind: "note"}, reveal, false)
 			})
 		}
 		ui.Text(c, "Modified "+it.Revised.Local().Format("January 2, 2006 at 15:04")).FontSize(11).TextColor(k.faint).AlignSelf(ui.Center)
@@ -389,7 +429,8 @@ func group(c *ui.Context, k ink, fn func()) {
 	ui.Column(c).Radius(10).Background(k.card).Border(1, k.line).Clip().Children(fn)
 }
 
-// fieldsOf lists the fields an item shows, in order.
+// fieldsOf lists the fields an item shows, in the order the keys go
+// through them.
 func (a *app) fieldsOf(it *bw.Item) []field {
 	var fs []field
 	add := func(label, value string, secret bool) {
@@ -459,12 +500,16 @@ func (a *app) fieldsOf(it *bw.Item) []field {
 			add(f.Name, f.Value, false)
 		}
 	}
+	if it.Notes != "" && it.Type != bw.TypeSecureNote {
+		fs = append(fs, field{label: "notes", value: it.Notes, kind: "note"})
+	}
 	return fs
 }
 
 // fieldRow is a field of an item: its label over its value. A click
-// copies it; it drags into the fields of other apps.
-func (a *app) fieldRow(c *ui.Context, k ink, it *bw.Item, f field, reveal, divider bool) {
+// copies it; it drags into the fields of other apps. focused is whether
+// the keys are on it.
+func (a *app) fieldRow(c *ui.Context, k ink, it *bw.Item, f field, reveal, divider, focused bool) {
 	if f.kind == "totp" {
 		code, left, ok := a.code(it)
 		if !ok {
@@ -482,12 +527,20 @@ func (a *app) fieldRow(c *ui.Context, k ink, it *bw.Item, f field, reveal, divid
 	case f.label == "number" && it.Card != nil:
 		shown = cardNumber(f.value)
 	}
-	row := ui.ButtonBase(c).Padding(9, 12).Gap(10).AlignItems(ui.Center).Label(f.label).
+	// The row takes the pointer, not the keyboard, which the search keeps.
+	row := ui.Row(c).Padding(9, 12).Gap(10).AlignItems(ui.Center).Label(f.label).
 		Tooltip("Click to copy, or drag into a field")
 	if divider {
 		row.BorderWidth(1, 0, 0, 0).BorderColor(k.line)
 	}
-	if row.Hovered() || row.Focused() {
+	switch {
+	case focused:
+		row.Background(k.accent.Alpha(0.12))
+		row.DrawOver(func(p *ui.Painter, r ui.Rect) {
+			p.Fill(ui.Rect{X: r.X, Y: r.Y, W: 3, H: r.H}, k.accent, 0)
+		})
+		row.ScrollIntoView()
+	case row.Hovered():
 		row.Background(k.hover)
 	}
 	if !f.secret || reveal || f.kind == "totp" || !it.Reprompt {
@@ -517,7 +570,7 @@ func (a *app) fieldRow(c *ui.Context, k ink, it *bw.Item, f field, reveal, divid
 			_, left, _ := a.code(it)
 			countdown(c, k, left, 30)
 		}
-		hovered := row.Hovered() || row.Focused()
+		hovered := row.Hovered() || focused
 		if f.secret && f.kind != "totp" {
 			ic, label := iconEye, "Reveal"
 			if reveal {
@@ -526,9 +579,10 @@ func (a *app) fieldRow(c *ui.Context, k ink, it *bw.Item, f field, reveal, divid
 			iconButton(c.Key("reveal"), k, ic, label+" (hold ⌥)").OnClick(func() {
 				if reveal {
 					delete(a.reveal, it.ID)
-					return
+				} else {
+					a.guarded(it, func() { a.reveal[it.ID] = true })
 				}
-				a.guarded(it, func() { a.reveal[it.ID] = true })
+				a.search.Focus()
 			})
 		}
 		if f.kind == "uri" {
@@ -538,7 +592,10 @@ func (a *app) fieldRow(c *ui.Context, k ink, it *bw.Item, f field, reveal, divid
 			}
 			iconButton(c.Key("open"), k, iconExternal, "Open").OnClick(func() { a.sys.openURL(u) })
 		}
-		cp := iconButton(c.Key("copy"), k, iconCopy, "Copy").OnClick(func() { a.copyField(it, f) })
+		cp := iconButton(c.Key("copy"), k, iconCopy, "Copy").OnClick(func() {
+			a.copyField(it, f)
+			a.search.Focus()
+		})
 		if !hovered {
 			cp.Opacity(0)
 		}
@@ -575,6 +632,45 @@ func countdown(c *ui.Context, k ink, left time.Duration, period float32) {
 	})
 }
 
+// largeTypeView shows a value big, each character in a cell numbered by
+// its place, digits and symbols in colors of their own, to read it to
+// someone or type it on another device. Any key or press puts it away.
+func (a *app) largeTypeView(c *ui.Context, k ink) {
+	lt := a.large
+	ui.Box(c.Key("large-backdrop")).Absolute().Top(0).Left(0).Right(0).Bottom(0).Radius(radius).
+		Background(ui.RGBA(0, 0, 0, 0.45)).OnClick(func() { a.large = nil })
+	ui.Column(c.Key("large")).Absolute().Top(40).Left(30).Right(30).Bottom(40).Center().Children(func() {
+		ui.Column(c).Padding(18, 22).Gap(14).Radius(14).Background(k.bg).MaxWidth(windowWidth-60).
+			Shadow(0, 10, 40, 0, ui.RGBA(0, 0, 0, 0.35)).Children(func() {
+			ui.Row(c).Gap(12).Children(func() {
+				ui.Text(c, lt.item+" · "+lt.label).FontSize(12).TextColor(k.muted).SingleLine().Grow(1).Shrink(1)
+				ui.Text(c, "Press any key to close").FontSize(11).TextColor(k.faint).NoWrap()
+			})
+			runes := []rune(lt.value)
+			if len(runes) > 64 || strings.ContainsRune(lt.value, '\n') {
+				ui.Text(c, lt.value).FontSize(22).Font("monospace").LineHeight(1.35).Wrap()
+				return
+			}
+			ui.Row(c).Wrap().Gap(2).Justify(ui.Center).Children(func() {
+				for i, r := range runes {
+					color := k.text
+					switch {
+					case unicode.IsDigit(r):
+						color = k.accent
+					case !unicode.IsLetter(r):
+						color = k.danger
+					}
+					ui.Column(c.Key(i)).Width(30).AlignItems(ui.Center).Padding(4, 0).Radius(6).
+						Background(k.text.Alpha(0.04)).Children(func() {
+						ui.Text(c, string(r)).Font("monospace").FontSize(30).FontWeight(600).TextColor(color)
+						ui.Text(c, fmt.Sprint(i+1)).FontSize(9).TextColor(k.faint)
+					})
+				}
+			})
+		})
+	})
+}
+
 // confirmView asks for the master password before showing or using the
 // secrets of an item that asks for it.
 func (a *app) confirmView(c *ui.Context, k ink) {
@@ -607,7 +703,8 @@ func (a *app) confirmView(c *ui.Context, k ink) {
 	}
 }
 
-// detailWindow is an item in a window of its own, which ⌘O opens.
+// detailWindow is an item in a window of its own, which ⌘O opens. The
+// copying keys work there too.
 func (a *app) detailWindow(c *ui.Context, id string) {
 	c.SetTheme(theme(c.Theme()))
 	k := inkOf(c.Theme())
@@ -622,25 +719,21 @@ func (a *app) detailWindow(c *ui.Context, id string) {
 		})
 		return
 	}
-	c.OnShortcut(ui.Cmd, ui.KeyC, func() {
-		if f, ok := primary(it); ok {
-			a.copyField(it, f)
+	if a.confirm == nil {
+		for id, do := range map[string]func(){
+			"copy-username": func() { a.copyPrimaryOf(it) },
+			"copy-password": func() { a.copyPasswordOf(it) },
+			"copy-code":     func() { a.copyCodeOf(it) },
+		} {
+			for _, s := range a.cfg.keysOf(id) {
+				if b, ok := parseBinding(s); ok {
+					c.OnShortcut(b.mods, b.key, do)
+				}
+			}
 		}
-	})
-	c.OnShortcut(ui.Cmd|ui.Shift, ui.KeyC, func() {
-		if f, ok := secretOf(it); ok {
-			a.copyField(it, f)
-		}
-	})
-	c.OnShortcut(ui.Cmd|ui.Alt, ui.KeyC, func() {
-		if code, _, ok := a.code(it); ok {
-			a.copyField(it, field{label: "one-time password", value: code, secret: true})
-		}
-	})
+	}
 	a.details(c, k, it, true)
 	if a.confirm != nil && a.confirmItem == id {
 		a.confirmView(c, k)
 	}
 }
-
-var debugReg bool

@@ -16,7 +16,7 @@ func (a *app) settingsView(c *ui.Context, k ink) {
 	ui.Row(c).Height(48).Padding(0, 12).Gap(8).AlignItems(ui.Center).DragWindow().
 		BorderWidth(0, 0, 1, 0).BorderColor(k.line).Children(func() {
 		if a.configured() {
-			textButton(c.Key("back"), k, "Done", iconBack).OnClick(func() { a.recording = false; a.page = pageItems })
+			textButton(c.Key("back"), k, "Done", iconBack).OnClick(func() { a.recordID = ""; a.page = pageItems })
 		}
 		ui.Text(c, "Settings").FontSize(14).FontWeight(650).Grow(1).TextAlign(ui.Center).Margin(0, 60, 0, 0)
 	})
@@ -63,19 +63,6 @@ func (a *app) settingsView(c *ui.Context, k ink) {
 				})
 			})
 		})
-		section(c, k, "Keyboard", func() {
-			settingRow(c, k, "Show Bitwarden Mini", "From any app, on the display the pointer is on.", func() {
-				a.shortcutRecorder(c.Key("shortcut"), k)
-			})
-			if a.shortcutErr != "" {
-				ui.Text(c, a.shortcutErr).FontSize(12).TextColor(k.danger)
-			}
-			if a.cfg.Shortcut != defaultShortcut {
-				textButton(c.Key("reset"), k, "Use "+keySymbols(defaultShortcut), nil).AlignSelf(ui.End).OnClick(func() {
-					a.useShortcut(defaultShortcut)
-				})
-			}
-		})
 		section(c, k, "Filling", func() {
 			trusted := a.sys.trusted(false)
 			detail := "Return types your username and password into the app you were in, and ⌥Return into the website it opens."
@@ -96,6 +83,7 @@ func (a *app) settingsView(c *ui.Context, k ink) {
 				c.After(2 * time.Second) // notice as it's allowed
 			}
 		})
+		a.shortcutsSection(c.Key("keys"), k)
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Margin(4, 0, 0, 0).FontSize(11).TextColor(k.faint).Children(func() {
 			ui.Text(c, "Bitwarden Mini "+a.version).Grow(1)
 			textButton(c.Key("quit"), k, "Quit Bitwarden Mini", nil).OnClick(a.quit)
@@ -119,52 +107,6 @@ func (a *app) accountStatus() string {
 		}
 	}
 	return s
-}
-
-// shortcutRecorder shows the shortcut, and records a new one after a
-// click: the next keys pressed with a modifier.
-func (a *app) shortcutRecorder(c *ui.Context, k ink) {
-	box := ui.ButtonBase(c).Padding(5, 12).Radius(7).MinWidth(140).Center().Label("Shortcut").
-		Border(1, k.line).Background(k.card)
-	if a.recording {
-		box.Border(2, k.accent).Focus()
-	}
-	box.OnClick(func() { a.recording, a.shortcutErr = !a.recording, "" })
-	box.HandleInput(func(ev ui.InputEvent) bool {
-		if !a.recording || ev.Kind != ui.InputKeyDown {
-			return false
-		}
-		if ev.Key == ui.KeyEscape && ev.Mods == 0 {
-			a.recording = false
-			return true
-		}
-		accel, ok := accelerator(ev.Mods, ev.Key)
-		if !ok {
-			if _, named := keyNames[ev.Key]; named {
-				a.shortcutErr = "Hold ⌘, ⌃ or ⌥ with the key."
-			}
-			return true
-		}
-		a.useShortcut(accel)
-		return true
-	})
-	box.Children(func() {
-		if a.recording {
-			ui.Text(c, "Type a shortcut…").FontSize(12).TextColor(k.accent)
-			return
-		}
-		ui.Text(c, keySymbols(a.cfg.Shortcut)).FontSize(13).FontWeight(600)
-	})
-}
-
-func (a *app) useShortcut(accel string) {
-	a.recording = false
-	if err := a.setShortcut(accel); err != nil {
-		a.shortcutErr = fmt.Sprintf("%s is taken by another app. Try another.", keySymbols(accel))
-		return
-	}
-	a.cfg.Shortcut, a.shortcutErr = accel, ""
-	a.changed()
 }
 
 func section(c *ui.Context, k ink, title string, build func()) {

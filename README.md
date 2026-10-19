@@ -47,20 +47,45 @@ server: bitwarden.com, bitwarden.eu, or the address of your own. Mini checks
 both against the accounts signed in to the desktop app, and says how to fix a
 mismatch, such as an account that lives on the other region.
 
-| Keys | |
+The keys act where Quick Access is: on the search results, on the fields
+of the item chosen, or on the vaults. Change any of them in Settings, the
+shortcut that shows Bitwarden Mini included.
+
+| Search results | |
 |---|---|
-| ⇧⌘Space | Open Bitwarden Mini from any app, on the display the pointer is on, as you left it (change it in Settings) |
 | ↑ ↓ | Choose an item |
-| ↩ | Fill the login into the app you were in; finish the filter chosen |
-| ⌥↩ | Open the login's website in the browser, and fill it |
-| ⌘C | Copy the username (a card's number, an identity's email, a note) |
+| → | Go to the item's fields (at the end of the search) |
+| ↩ | Fill the login into the browser you came from, or the app with a login field focused; else copy the password. On a filter, finish it |
+| ⇥ | Finish the filter chosen |
+
+| Item fields | |
+|---|---|
+| ↑ ↓ | Choose a field |
+| ↩ | Copy the field |
+| → | Reveal a password, then show it in Large Type; show other fields in Large Type |
+| ← | Back to the results |
+
+| Vault selector (⌘K) | |
+|---|---|
+| ↑ ↓ | Choose a vault, folder or collection |
+| → ← | Show or hide what a vault holds; ← at the top goes back |
+| ↩ | Search it |
+
+| Anywhere | |
+|---|---|
+| ⇧⌘Space | Show Bitwarden Mini from any app, on the display the pointer is on, as you left it |
+| ⌘C, ⌘B | Copy the username (a card's number, an identity's email, a note) |
 | ⇧⌘C | Copy the password (a card's security code, a key's private half) |
 | ⌥⌘C | Copy the one-time password |
+| ⇧↩ | Open the login's website in the browser, and fill it |
+| ⌘1 … ⌘9 | Search All Vaults, My Vault, an organization, then folders and collections |
 | ⌘O | Open the item in a window of its own |
 | ⇧⌘O | Open Bitwarden |
+| ⌘F | Back to the search |
 | ⌘L | Lock |
 | ⌘, | Settings |
-| esc | Clear the search, or close the window |
+| esc | Close the selector or Large Type, clear the search, then close Bitwarden Mini, forgetting the passwords revealed |
+| ⌘W | Close Bitwarden Mini |
 
 Hold ⌥ to see passwords. Click a field to copy it, or drag it into a field of
 another app. Copied passwords and codes are marked concealed for clipboard
@@ -83,7 +108,7 @@ Filters combine with words and with each other, and complete as you type `=`.
 ### Permissions
 
 - **Accessibility**, to fill other apps: Mini types into the field with the
-  keyboard focus, and only into text fields.
+  keyboard focus, and only into text fields of one line.
 - **Automation** of your browser, to read the page it shows, for suggestions.
   Safari and Chromium browsers tell it; Firefox doesn't.
 

@@ -36,6 +36,9 @@ type config struct {
 	Window placements `json:"window"`
 	// Recent are the IDs of the items used last, the last first.
 	Recent []string `json:"recent,omitempty"`
+	// Keys are the keys the user gave actions, by the actions' IDs, in
+	// place of their defaults.
+	Keys map[string][]string `json:"keys,omitempty"`
 	// AppID names this app to the desktop app, as its browser extensions
 	// name themselves.
 	AppID string `json:"appId,omitempty"`

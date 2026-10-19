@@ -68,6 +68,7 @@ type fakeSystem struct {
 	authErr  error
 	auths    int
 	trust    bool
+	field    bool // a text field has the focus in the app the user was in
 	pageURLs map[string]string
 }
 
@@ -94,6 +95,7 @@ func (s *fakeSystem) fill(_ context.Context, _ macos.App, req fillRequest) error
 	return s.fillErr
 }
 func (s *fakeSystem) pageURL(_ context.Context, b macos.App) string { return s.pageURLs[b.BundleID] }
+func (s *fakeSystem) fieldFocused(macos.App) bool                   { return s.field }
 
 func (s *fakeSystem) last() string {
 	if len(s.copied) == 0 {
@@ -396,8 +398,8 @@ func TestSearchAndKeys(t *testing.T) {
 	if len(h.sys.filled) != 1 || h.sys.filled[0].username != "ada" || h.sys.filled[0].password != "gh-s3cret!" || h.sys.filled[0].page != "" {
 		t.Fatalf("filled %+v", h.sys.filled)
 	}
-	// ⌥Return opens its website, and fills it.
-	h.key(ui.Alt, ui.KeyEnter)
+	// Shift-Return opens its website, and fills it.
+	h.key(ui.Shift, ui.KeyEnter)
 	if len(h.sys.filled) != 2 || h.sys.filled[1].page != "https://github.com/login" {
 		t.Fatalf("filled %+v", h.sys.filled)
 	}
@@ -527,7 +529,7 @@ func TestReprompt(t *testing.T) {
 func TestFillNeedsAccessibility(t *testing.T) {
 	h := newHarness(t, nil, true)
 	h.unlock()
-	h.sys.trust = false
+	h.sys.trust, h.sys.field = false, true
 	h.a.front = front{app: macos.App{PID: 42, Name: "Slack"}}
 	h.tt.Type("git")
 	h.settle()
@@ -542,7 +544,7 @@ func TestFillNeedsAccessibility(t *testing.T) {
 func TestFillFails(t *testing.T) {
 	h := newHarness(t, nil, true)
 	h.unlock()
-	h.sys.fillErr = errNoField
+	h.sys.fillErr, h.sys.field = errNoField, true
 	h.a.front = front{app: macos.App{PID: 42, Name: "Slack"}}
 	h.tt.Type("git")
 	h.settle()
@@ -584,30 +586,82 @@ func TestNoData(t *testing.T) {
 func TestSettings(t *testing.T) {
 	h := newHarness(t, nil, true)
 	h.unlock()
-	h.tt.SetSize(windowWidth, 1000) // all of it, unscrolled
+	h.tt.SetSize(windowWidth, 2400) // all of it, unscrolled
 	h.key(ui.Cmd, ui.KeyComma)
-	h.has("Settings", "Lock when idle", "Unlock with Touch ID", "Clear copied secrets", "⇧⌘Space", "Accessibility access")
+	h.has("Settings", "Lock when idle", "Unlock with Touch ID", "Clear copied secrets", "⇧⌘Space", "Accessibility access",
+		"Keyboard shortcuts", "Copy the username", "⌘C", "⌘B", "Search My Vault")
 	snapshot(t, h.tt, "settings")
-	h.click("Shortcut")
-	if !h.a.recording {
-		t.Fatal("not recording")
+
+	// The global shortcut, recorded.
+	h.click("Show Bitwarden Mini key")
+	if h.a.recordID != "show" {
+		t.Fatalf("recording %q", h.a.recordID)
 	}
 	h.key(ui.Cmd|ui.Alt, ui.KeyK)
-	if h.a.cfg.Shortcut != "Option+Cmd+K" || h.a.recording {
+	if h.a.cfg.Shortcut != "Option+Cmd+K" || h.a.recordID != "" {
 		t.Fatalf("shortcut %q", h.a.cfg.Shortcut)
 	}
 	h.has("⌥⌘K")
 	h.a.setShortcut = func(string) error { return errors.New("taken") }
-	h.click("Shortcut")
+	h.click("Show Bitwarden Mini key")
 	h.key(ui.Cmd, ui.KeyJ)
 	if h.a.cfg.Shortcut != "Option+Cmd+K" {
 		t.Errorf("a taken shortcut was saved")
 	}
 	h.has("⌘J is taken by another app. Try another.")
-	h.key(0, ui.KeyEscape)
-	h.key(0, ui.KeyEscape)
+	h.key(0, ui.KeyEscape) // stops recording
+	h.key(0, ui.KeyEscape) // leaves the settings
 	if h.a.page != pageItems {
 		t.Errorf("page %v", h.a.page)
+	}
+}
+
+func TestCustomKeys(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.unlock()
+	h.tt.SetSize(windowWidth, 2400)
+	h.key(ui.Cmd, ui.KeyComma)
+
+	// Another key for copying the password, which Shift-Cmd-C still does.
+	h.a.recordID, h.a.recordIndex = "copy-password", 1
+	h.settle()
+	h.key(ui.Cmd, ui.KeyP)
+	if got := h.a.cfg.keysOf("copy-password"); len(got) != 2 || got[1] == "" {
+		t.Fatalf("keys %q", got)
+	}
+	// A key that another action does is refused.
+	h.click("Copy the password key")
+	h.key(ui.Cmd, ui.KeyO)
+	h.has("⌘O already does “Open the item in a window”.")
+	h.key(0, ui.KeyEscape)
+	// Delete takes a key out.
+	h.a.recordID, h.a.recordIndex = "copy-username", 1
+	h.settle()
+	h.key(0, ui.KeyBackspace)
+	if got := h.a.cfg.keysOf("copy-username"); len(got) != 1 || got[0] != "Cmd+C" {
+		t.Fatalf("keys %q", got)
+	}
+	// Letters need a modifier: they type into the search.
+	h.a.recordID, h.a.recordIndex = "lock", 0
+	h.settle()
+	h.key(0, ui.KeyQ)
+	h.has("Hold ⌘, ⌃ or ⌥ with that key.")
+	h.key(0, ui.KeyEscape)
+
+	h.key(0, ui.KeyEscape)
+	h.tt.Type("git")
+	h.settle()
+	h.key(ui.Cmd, ui.KeyP)
+	if h.sys.last() != "gh-s3cret!" {
+		t.Fatalf("⌘P copied %q", h.sys.copied)
+	}
+	h.key(ui.Cmd, ui.KeyB) // taken out
+	if h.sys.last() != "gh-s3cret!" {
+		t.Errorf("⌘B copied %q", h.sys.last())
+	}
+	h.a.resetKeys()
+	if h.a.cfg.Keys != nil {
+		t.Errorf("keys %v", h.a.cfg.Keys)
 	}
 }
 
@@ -661,5 +715,156 @@ func TestPlacement(t *testing.T) {
 	x, y = p.place(3, small, windowWidth, windowHeight)
 	if x < 0 || x+windowWidth > 800 || y < 0 || y+windowHeight > 500 {
 		t.Fatalf("small %d,%d", x, y)
+	}
+}
+
+func TestReturnWithoutAFieldCopies(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.unlock()
+	h.a.front = front{app: macos.App{PID: 42, Name: "Notes", BundleID: "com.apple.Notes"}}
+	h.tt.Type("git")
+	h.settle()
+	h.has("Copy password")
+	h.key(0, ui.KeyEnter)
+	if len(h.sys.filled) != 0 || h.sys.last() != "gh-s3cret!" {
+		t.Fatalf("filled %v, copied %q", h.sys.filled, h.sys.copied)
+	}
+	// With a field to fill, Return fills it.
+	h.sys.field, h.a.flash = true, ""
+	h.settle()
+	h.has("Fill in Notes")
+	h.key(0, ui.KeyEnter)
+	if len(h.sys.filled) != 1 {
+		t.Fatalf("filled %v", h.sys.filled)
+	}
+}
+
+func TestDetailsKeys(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.unlock()
+	h.tt.Type("git")
+	h.settle()
+	h.key(0, ui.KeyRight)
+	if h.a.mode != modeDetails || h.a.fieldSel != 0 {
+		t.Fatalf("mode %v, field %d", h.a.mode, h.a.fieldSel)
+	}
+	snapshot(t, h.tt, "details")
+	h.key(0, ui.KeyEnter)
+	if h.sys.last() != "ada" {
+		t.Fatalf("Return copied %q", h.sys.copied)
+	}
+	h.key(0, ui.KeyDown)
+	if _, f, _ := h.a.focusedField(); f.label != "password" {
+		t.Fatalf("field %q", f.label)
+	}
+	h.key(0, ui.KeyRight) // reveals it
+	h.has("gh-s3cret!")
+	h.key(0, ui.KeyRight) // then shows it in Large Type
+	if h.a.large == nil || h.a.large.value != "gh-s3cret!" {
+		t.Fatalf("large %+v", h.a.large)
+	}
+	h.has("Press any key to close", "10")
+	snapshot(t, h.tt, "large-type")
+	h.key(0, ui.KeyDown) // any key puts it away, and does nothing else
+	if h.a.large != nil {
+		t.Fatal("Large Type stays")
+	}
+	if _, f, _ := h.a.focusedField(); f.label != "password" {
+		t.Errorf("the key moved to %q", f.label)
+	}
+	h.key(0, ui.KeyDown)
+	h.key(0, ui.KeyEnter)
+	if code, _, _ := h.a.code(h.a.selected()); h.sys.last() != code {
+		t.Errorf("copied %q, not the code", h.sys.last())
+	}
+	h.key(0, ui.KeyLeft)
+	if h.a.mode != modeResults {
+		t.Fatalf("mode %v", h.a.mode)
+	}
+	// Typing goes back to the search.
+	h.key(0, ui.KeyRight)
+	h.tt.Type("h")
+	h.settle()
+	if h.a.mode != modeResults || h.a.query != "gith" {
+		t.Errorf("mode %v, query %q", h.a.mode, h.a.query)
+	}
+	// Right moves the caret while it's before the end.
+	h.key(0, ui.KeyLeft)
+	h.key(0, ui.KeyRight)
+	if h.a.mode != modeResults {
+		t.Errorf("Right before the end went to the fields")
+	}
+}
+
+func TestEscapeForgetsWhatShowed(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.unlock()
+	h.tt.Type("git")
+	h.settle()
+	h.a.reveal[h.a.selected().ID] = true
+	h.key(0, ui.KeyEscape) // clears the search
+	if h.a.query != "" || h.sys.hidden != 0 {
+		t.Fatalf("query %q, hidden %d", h.a.query, h.sys.hidden)
+	}
+	h.key(0, ui.KeyEscape) // closes
+	if h.sys.hidden != 1 || len(h.a.reveal) != 0 || !h.a.unlocked() {
+		t.Fatalf("hidden %d, reveal %v, unlocked %v", h.sys.hidden, h.a.reveal, h.a.unlocked())
+	}
+}
+
+func TestVaultSelector(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.unlock()
+	h.key(ui.Cmd, ui.KeyK)
+	if h.a.mode != modeVaults {
+		t.Fatalf("mode %v", h.a.mode)
+	}
+	h.has("All Vaults", "My Vault", "Acme Inc.", "⌘1", "⌘2", "⌘3")
+	snapshot(t, h.tt, "vaults")
+	h.key(0, ui.KeyDown) // My Vault
+	h.key(0, ui.KeyDown) // Acme Inc.
+	h.key(0, ui.KeyRight)
+	h.has("Engineering")
+	h.key(0, ui.KeyRight) // into it
+	if h.a.vaultCursor != "collection:"+h.a.vault.Collections[0].ID {
+		t.Fatalf("cursor %q", h.a.vaultCursor)
+	}
+	h.key(0, ui.KeyEnter)
+	if h.a.mode != modeResults || h.a.vaultName() != "Engineering" {
+		t.Fatalf("mode %v, vault %q", h.a.mode, h.a.vaultName())
+	}
+	for _, r := range h.a.rows {
+		if r.item != nil && r.item.Name != "AWS Console" && r.item.Name != "Deploy key" {
+			t.Errorf("%s isn't in Engineering", r.item.Name)
+		}
+	}
+	// Left goes back to the vault, then away.
+	h.key(ui.Cmd, ui.KeyK)
+	h.key(0, ui.KeyLeft)
+	if h.a.vaultCursor != h.f.OrgID {
+		t.Fatalf("cursor %q", h.a.vaultCursor)
+	}
+	h.key(0, ui.KeyLeft) // collapses
+	h.key(0, ui.KeyLeft) // goes back
+	if h.a.mode != modeResults {
+		t.Fatalf("mode %v", h.a.mode)
+	}
+	// Command and a digit choose at once.
+	h.key(ui.Cmd, ui.Key2)
+	if h.a.cfg.Vault != "personal" {
+		t.Fatalf("⌘2: %q", h.a.cfg.Vault)
+	}
+	h.key(ui.Cmd, ui.Key1)
+	if h.a.cfg.Vault != "" {
+		t.Fatalf("⌘1: %q", h.a.cfg.Vault)
+	}
+	// Folders and collections follow the vaults.
+	tree := h.a.vaultTree()
+	nums := map[string]int{}
+	for _, v := range tree {
+		nums[v.name] = v.num
+	}
+	if nums["All Vaults"] != 1 || nums["My Vault"] != 2 || nums["Acme Inc."] != 3 || nums["Personal"] == 0 {
+		t.Errorf("numbers %v", nums)
 	}
 }

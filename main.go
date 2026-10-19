@@ -104,7 +104,7 @@ func (s *shell) ready() {
 
 	if err := s.registerShortcut(cfg.Shortcut); err != nil {
 		log.Printf("shortcut %s: %v", cfg.Shortcut, err)
-		a.shortcutErr = fmt.Sprintf("%s is taken by another app. Choose another shortcut.", keySymbols(cfg.Shortcut))
+		a.keyErr, a.keyErrID = fmt.Sprintf("%s is taken by another app. Choose another shortcut.", keySymbols(cfg.Shortcut)), "show"
 	}
 
 	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) { s.quitting = true })
@@ -219,7 +219,7 @@ func (s *shell) show() {
 	w.OnClosed(func() {
 		if s.win == w {
 			s.win = nil
-			a.recording = false
+			a.recordID = ""
 		}
 	})
 	s.win = w
@@ -382,6 +382,12 @@ func (m *macSystem) trusted(prompt bool) bool { return macos.Trusted(prompt) }
 
 func (m *macSystem) fill(ctx context.Context, target macos.App, req fillRequest) error {
 	return fillInto(ctx, target, req, func(u string) { mygo.Shell.OpenExternal(u) })
+}
+
+// fieldFocused reports whether a text field has the focus in the app,
+// where Return fills.
+func (m *macSystem) fieldFocused(app macos.App) bool {
+	return macos.Trusted(false) && macos.FocusedFieldOf(app.PID) != macos.FieldNone
 }
 
 func (m *macSystem) pageURL(ctx context.Context, browser macos.App) string {

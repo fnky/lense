@@ -77,12 +77,7 @@ func (a *app) view(c *ui.Context) {
 	k := inkOf(t)
 	c.Root().Background(ui.Transparent)
 
-	c.OnShortcut(0, ui.KeyEscape, a.escape)
-	c.OnShortcut(ui.Cmd, ui.KeyComma, a.openSettings)
-	c.OnShortcut(ui.Cmd, ui.KeyW, a.sys.hide)
-	if a.unlocked() {
-		c.OnShortcut(ui.Cmd, ui.KeyL, func() { a.lock(false) })
-	}
+	a.windowKeys(c)
 
 	// The panel's shadow outlines it with a hairline: no border of its own.
 	box := ui.Column(c).Fill().FontSize(13).TextColor(k.text).Background(k.bg).Radius(radius).Clip()
@@ -100,11 +95,33 @@ func (a *app) view(c *ui.Context) {
 	})
 }
 
+// windowKeys gives the window the keys of the actions where it is. The
+// search takes its keys itself while it has the keyboard, as it would
+// edit with some; a key being recorded, or the master password asked for,
+// takes them all.
+func (a *app) windowKeys(c *ui.Context) {
+	items := a.configured() && a.page == pageItems && a.unlocked()
+	if a.recordID != "" || a.confirm != nil || items && a.search.Focused(c) {
+		return
+	}
+	for _, act := range actions {
+		if act.scope == inGlobal || !items && act.scope != inWindow || items && !act.scope.covers(a.mode) {
+			continue
+		}
+		id := act.id
+		for _, s := range a.cfg.keysOf(id) {
+			if b, ok := parseBinding(s); ok {
+				c.OnShortcut(b.mods, b.key, func() { a.press(b.mods, b.key) })
+			}
+		}
+	}
+}
+
 func (a *app) openSettings() {
 	if a.page == pageSettings {
 		return
 	}
-	a.recording, a.shortcutErr = false, ""
+	a.recordID, a.keyErr = "", ""
 	a.page = pageSettings
 }
 
