@@ -4,6 +4,9 @@
   "version": "0.1.0",
   "out": "build",
   "macos": {
-    "infoPlist": { "LSUIElement": true }
+    "infoPlist": {
+      "LSUIElement": true,
+      "NSAppleEventsUsageDescription": "Bitwarden Mini asks your browser for the page it shows, to suggest its logins and to fill the website it opens."
+    }
   }
 }
