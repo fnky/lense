@@ -1187,31 +1187,33 @@ func TestWebsiteFieldOpensAndFills(t *testing.T) {
 	if len(h.sys.opened) != 0 {
 		t.Fatalf("opened %v, not filled", h.sys.opened)
 	}
-	// Copy comes before the other buttons of a field: the password's
-	// Reveal is at the end of its row, as the username's Copy, alone.
+	// Every field's Copy is in the same place, before the field's button:
+	// the username's, which has none, as the password's, before Reveal.
 	cp, _ := h.tt.Find("Copy")
 	reveal, _ := h.tt.Find("Reveal (hold ⌥)")
-	if cp.Y >= reveal.Y || cp.X != reveal.X {
+	if cp.Y >= reveal.Y || cp.X+38 != reveal.X {
 		t.Fatalf("the username's copy at %v, the password's reveal at %v", cp, reveal)
 	}
-	h.tt.Move(reveal.X-100, reveal.Y+reveal.H/2)
-	h.settle()
+	h.tt.Move(cp.X-100, cp.Y+cp.H/2)
+	h.tt.Advance(200 * time.Millisecond)
 	snapshot(t, h.tt, "field-hover")
 }
 
-func TestCopyTakesTheCountdownsPlace(t *testing.T) {
+func TestCopyTakesTheSecondsOfACodesPlace(t *testing.T) {
 	h := newHarness(t, nil, true)
 	h.unlock()
 	secs, ok := h.tt.Find("30s")
 	if !ok {
 		t.Fatalf("no countdown in %q", h.tt.Texts())
 	}
-	// ring reports whether the countdown's ring shows, blue, after the
-	// seconds, and ink whether anything shows there.
-	ring := func() (blue, ink bool) {
+	// Copy's place on every row, and the button's after it.
+	cp, _ := h.tt.Find("Copy")
+	// look reports whether something blue, and anything, shows on the
+	// code's row from x0 to x1.
+	look := func(x0, x1 float32) (blue, ink bool) {
 		img := h.tt.Image()
 		for y := int(secs.Y * 2); y < int((secs.Y+secs.H)*2); y++ {
-			for x := int((secs.X + secs.W + 4) * 2); x < int((secs.X+secs.W+24)*2); x++ {
+			for x := int(x0 * 2); x < int(x1*2); x++ {
 				r, g, b, _ := img.At(x, y).RGBA()
 				r, g, b = r>>8, g>>8, b>>8
 				if b > r+60 && b > g+30 {
@@ -1224,13 +1226,20 @@ func TestCopyTakesTheCountdownsPlace(t *testing.T) {
 		}
 		return blue, ink
 	}
-	if blue, _ := ring(); !blue {
-		t.Fatal("no ring before the pointer comes")
+	ring := func() bool { blue, _ := look(cp.X+38, cp.X+66); return blue }
+	_, seconds := look(cp.X+29, cp.X+37) // between the places, as far as the seconds go
+	if !ring() || !seconds {
+		t.Fatal("no countdown before the pointer comes")
+	}
+	if _, ink := look(cp.X+4, cp.X+12); ink {
+		t.Fatal("copy shows before the pointer comes")
 	}
 	h.tt.Move(secs.X-200, secs.Y+secs.H/2)
 	h.tt.Advance(200 * time.Millisecond)
 	snapshot(t, h.tt, "code-hover")
-	if blue, ink := ring(); blue || !ink {
-		t.Fatalf("hovered: the ring shows %v, copy shows %v", blue, ink)
+	_, seconds = look(cp.X+29, cp.X+37)
+	_, copied := look(cp.X+4, cp.X+24)
+	if !ring() || seconds || !copied {
+		t.Fatalf("hovered: ring %v, seconds %v, copy %v", ring(), seconds, copied)
 	}
 }

@@ -709,30 +709,34 @@ func (a *app) fieldRow(c *ui.Context, k ink, it *bw.Item, f field, key string, r
 				val.SingleLine()
 			}
 		})
-		// Copy fades in as the pointer comes: in the place of the
-		// countdown of a code, which fades out, else before the row's
-		// other buttons, which stay in their places.
+		// The end of every row is alike: Copy, which fades in as the
+		// pointer comes, then the row's button, if it has one, so that
+		// nothing moves from row to row. A code's countdown shows in the
+		// button's place, its seconds before it in Copy's, which fade out
+		// as Copy fades in.
 		shown := float32(0)
 		if row.Hovered() || focused {
 			shown = 1
 		}
 		shown = row.Animate("copy", shown, 120*time.Millisecond)
-		copyButton := func() ui.Element {
-			return iconButton(c.Key("copy"), k, iconCopy, "Copy").Opacity(shown).OnClick(func() {
+		ui.Row(c.Key("copy-slot")).Size(28, 28).AlignItems(ui.Center).Justify(ui.End).Children(func() {
+			if f.kind == "totp" {
+				_, left, _ := a.code(it)
+				// Next to the ring, as far from it as the ring is inside
+				// its place.
+				ui.Text(c, fmt.Sprintf("%ds", int(left.Seconds()+0.5))).FontSize(11).FontFeatures("tnum").
+					TextColor(k.muted).NoWrap().Translate(11, 0).Opacity(1 - shown)
+			}
+			iconButton(c.Key("copy"), k, iconCopy, "Copy").Absolute().Top(0).Left(0).Opacity(shown).OnClick(func() {
 				a.copyField(it, f)
 				a.search.Focus()
 			})
-		}
-		if f.kind == "totp" {
+		})
+		switch {
+		case f.kind == "totp":
 			_, left, _ := a.code(it)
-			ui.Row(c.Key("countdown")).Height(28).AlignItems(ui.Center).Children(func() {
-				countdown(c, k, left, 30).Opacity(1 - shown)
-				copyButton().Absolute().Top(0).Right(0)
-			})
-		} else {
-			copyButton()
-		}
-		if f.secret && f.kind != "totp" {
+			ui.Row(c).Size(28, 28).Center().Children(func() { countdown(c, k, left, 30) })
+		case f.secret:
 			ic, label := iconEye, "Reveal"
 			if reveal {
 				ic, label = iconEyeOff, "Conceal"
@@ -745,8 +749,7 @@ func (a *app) fieldRow(c *ui.Context, k ink, it *bw.Item, f field, key string, r
 				}
 				a.search.Focus()
 			})
-		}
-		if f.kind == "uri" {
+		case f.kind == "uri":
 			u := f.uri
 			if !strings.Contains(u, "://") {
 				u = "https://" + u
@@ -758,6 +761,8 @@ func (a *app) fieldRow(c *ui.Context, k ink, it *bw.Item, f field, key string, r
 			} else {
 				iconButton(c.Key("open"), k, iconExternal, "Open").OnClick(func() { a.sys.openURL(u) })
 			}
+		default:
+			ui.Box(c).Size(28, 28)
 		}
 	})
 }
@@ -781,14 +786,11 @@ func countdown(c *ui.Context, k ink, left time.Duration, period float32) ui.Elem
 	if left < 6*time.Second {
 		color = k.danger
 	}
-	return ui.Row(c).Gap(5).AlignItems(ui.Center).Children(func() {
-		ui.Text(c, fmt.Sprintf("%ds", int(left.Seconds()+0.5))).FontSize(11).FontFeatures("tnum").TextColor(k.muted)
-		track := k.line
-		ui.Box(c).Size(16, 16).Draw(func(p *ui.Painter, r ui.Rect) {
-			cx, cy := r.X+r.W/2, r.Y+r.H/2
-			p.StrokePath((&ui.Path{}).Circle(cx, cy, 6.5), 2.5, track)
-			p.StrokePath((&ui.Path{}).Circle(cx, cy, 6.5).Trim(0, frac), 2.5, color)
-		})
+	track := k.line
+	return ui.Box(c).Size(16, 16).Draw(func(p *ui.Painter, r ui.Rect) {
+		cx, cy := r.X+r.W/2, r.Y+r.H/2
+		p.StrokePath((&ui.Path{}).Circle(cx, cy, 6.5), 2.5, track)
+		p.StrokePath((&ui.Path{}).Circle(cx, cy, 6.5).Trim(0, frac), 2.5, color)
 	})
 }
 
