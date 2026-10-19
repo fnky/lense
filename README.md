@@ -136,6 +136,8 @@ Filters combine with words and with each other, and complete as you type `=`.
   `BWMINI_DEBUG=1` to debug it.
 - Core dumps are off, and the master password fields turn on Secure Event
   Input, as macOS's own do, so that other apps don't see what you type.
+- Screenshots and screen recordings leave Mini's windows out, as Bitwarden's
+  do, unless you allow screen capture in Settings → Security.
 - Builds signed with a Developer ID (`macos.signingIdentity` in `mygo.json`)
   run under the hardened runtime, which keeps debuggers, injected libraries
   and other processes out of Mini's memory; `entitlements.plist` lets it ask

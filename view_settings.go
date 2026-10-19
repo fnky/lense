@@ -50,6 +50,11 @@ func (a *app) settingsView(c *ui.Context, k ink) {
 					detail = "This Mac has no Touch ID set up."
 				}
 				switchRow(c.Key("touch"), k, "Unlock with Touch ID", detail, &a.cfg.TouchID, a.changed)
+				switchRow(c.Key("capture"), k, "Allow screen capture", "Lets screenshots and screen recordings show Bitwarden Mini, which macOS leaves out of them otherwise.",
+					&a.cfg.AllowScreenCapture, func() {
+						a.changed()
+						a.applyCapture()
+					})
 			})
 			section(c, k, "Appearance", func() {
 				var labels []string

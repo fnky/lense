@@ -34,9 +34,10 @@ func ScrollPhase() (phase, momentum Phase)           { return 0, 0 }
 func BarMaterial(nsWindow uintptr, height, radius float64, material int) uintptr {
 	return 0
 }
-func ShowBar(view uintptr, show bool) {}
-func SecureInput(on bool)             {}
-func DenyDebuggers() error            { return nil }
+func ShowBar(view uintptr, show bool)             {}
+func SecureInput(on bool)                         {}
+func DenyDebuggers() error                        { return nil }
+func AllowCapture(nsWindow uintptr, allowed bool) {}
 
 type Sealed struct{}
 

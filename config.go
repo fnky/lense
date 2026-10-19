@@ -35,6 +35,9 @@ type config struct {
 	Material string `json:"material,omitempty"`
 	// Tooltips name the buttons of an icon as the pointer rests on them.
 	Tooltips bool `json:"tooltips"`
+	// AllowScreenCapture lets screenshots and screen recordings show the
+	// windows, which macOS leaves them out of otherwise.
+	AllowScreenCapture bool `json:"allowScreenCapture"`
 
 	// Vault is the vault shown: "" all of them, "personal", or an
 	// organization's ID.

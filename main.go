@@ -108,6 +108,13 @@ func (s *shell) ready() {
 			s.applyMaterial(s.win)
 		}
 	}
+	a.applyCapture = func() {
+		s.allowCapture(s.win)
+		s.allowCapture(s.footer)
+		for _, w := range s.details {
+			s.allowCapture(w)
+		}
+	}
 	a.showBar = func(show bool) { mygo.RunOnMain(func() { s.showBar(show) }) }
 	a.redrawBar = func() {
 		if s.footer != nil {
@@ -237,6 +244,7 @@ func (s *shell) show() {
 	})
 	w.SetPosition(x, y)
 	s.applyMaterial(w)
+	s.allowCapture(w)
 	s.addBar(w)
 	w.OnClose(func(e *mygo.CloseEvent) {
 		// Like Spotlight, it goes as the user goes elsewhere, but not to
@@ -287,6 +295,7 @@ func (s *shell) addBar(w *mygo.Window) {
 		Content: ui.View(s.a.footerView),
 		Page:    mygo.PageOptions{DevTools: mygo.DevToolsDisabled},
 	})
+	s.allowCapture(s.footer)
 	s.a.nativeBar, s.a.barShown = true, false
 }
 
@@ -300,6 +309,14 @@ func (s *shell) showBar(show bool) {
 		s.footer.Show()
 	} else {
 		s.footer.Hide()
+	}
+}
+
+// allowCapture lets screen captures show w, or has macOS leave it out of
+// them, as the settings say.
+func (s *shell) allowCapture(w *mygo.Window) {
+	if w != nil {
+		macos.AllowCapture(w.NativeHandle(), s.a.cfg.AllowScreenCapture)
 	}
 }
 
@@ -436,6 +453,7 @@ func (s *shell) openDetail(id string) {
 		Page:      mygo.PageOptions{DevTools: mygo.DevToolsDisabled},
 	})
 	s.details[id] = w
+	s.allowCapture(w)
 	w.OnClosed(func() {
 		delete(s.details, id)
 		delete(a.windowBands, id)

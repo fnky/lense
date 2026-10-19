@@ -1543,3 +1543,24 @@ func TestSecureInputWhileTheMasterPasswordIsTyped(t *testing.T) {
 		t.Fatalf("secure input %v once unlocked", h.sys.secure)
 	}
 }
+
+func TestScreenCaptureIsAllowedInTheSettings(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.unlock()
+	if h.a.cfg.AllowScreenCapture {
+		t.Fatal("screen capture allowed by default")
+	}
+	applied := 0
+	h.a.applyCapture = func() { applied++ }
+	h.tt.SetSize(windowWidth, 2400) // all of the settings, unscrolled
+	h.key(ui.Cmd, ui.KeyComma)
+	label, ok := h.tt.Find("Allow screen capture")
+	if !ok {
+		t.Fatalf("no setting in %q", h.tt.Texts())
+	}
+	h.tt.ClickAt(windowWidth-28-18, label.Y+17)
+	h.settle()
+	if !h.a.cfg.AllowScreenCapture || applied != 1 {
+		t.Fatalf("allowed %v, applied %d times", h.a.cfg.AllowScreenCapture, applied)
+	}
+}

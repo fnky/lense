@@ -249,8 +249,10 @@ type app struct {
 	// or the desktop app's prompt. refocus gives it the keyboard back.
 	holdOpen int
 	refocus  func()
-	// applyMaterial shows the material chosen behind the window.
+	// applyMaterial shows the material chosen behind the window, and
+	// applyCapture lets screen captures show the windows, or not.
 	applyMaterial func()
+	applyCapture  func()
 
 	// Settings: the key of an action being recorded, by its ID, and which
 	// of its keys (one past them to add one).
@@ -277,6 +279,7 @@ func newApp(cfg config, desk desktop, sys system) *app {
 		onUnlock:      func() {},
 		refocus:       func() {},
 		applyMaterial: func() {},
+		applyCapture:  func() {},
 		setShortcut:   func(string) error { return nil },
 		exit:          func() {},
 		sel:           -1,
