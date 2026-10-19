@@ -30,9 +30,19 @@ func TypeText(text string)                           {}
 func CopySecret(text string, concealed bool) int     { return -1 }
 func ClearIfUnchanged(count int) bool                { return false }
 func ScrollPhase() (phase, momentum Phase)           { return 0, 0 }
+func BarMaterial(nsWindow uintptr, height, radius float64, material int) uintptr {
+	return 0
+}
 func BrowserURL(ctx context.Context, bundleID string) (string, error) {
 	return "", errors.ErrUnsupported
 }
+
+const (
+	MaterialTitlebar   = 3
+	MaterialHeaderView = 10
+	MaterialHUDWindow  = 13
+	MaterialContent    = 18
+)
 
 const (
 	KeyTab    uint16 = 48
