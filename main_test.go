@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"image/png"
@@ -96,22 +97,27 @@ func (d *fakeDesktop) launch() error {
 
 // fakeSystem is macOS: it records what was copied, filled and opened.
 type fakeSystem struct {
-	mu       sync.Mutex
-	copied   []string
-	secret   []bool
-	filled   []fillRequest
-	fillErr  error
-	opened   []string
-	details  []string
-	hidden   int
-	shown    int
-	bio      bool
-	authErr  error
-	auths    int
-	trust    bool
-	field    bool // a text field has the focus in the app the user was in
-	drags    []dragPhase
-	pageURLs map[string]string
+	mu      sync.Mutex
+	copied  []string
+	secret  []bool
+	filled  []fillRequest
+	fillErr error
+	opened  []string
+	details []string
+	hidden  int
+	shown   int
+	bio     bool
+	authErr error // what Touch ID answers as a sealed key opens
+	// seals counts the secrets sealed, which sealedKeys are, unless
+	// sealErr.
+	seals      int
+	sealErr    error
+	sealedKeys []*fakeSealed
+	auths      int
+	trust      bool
+	field      bool // a text field has the focus in the app the user was in
+	drags      []dragPhase
+	pageURLs   map[string]string
 	// phase and momentum are those of the scrolling, none by default.
 	phase, momentum macos.Phase
 	// closed is told the window closed, as hide closes it.
@@ -133,12 +139,40 @@ func (s *fakeSystem) hide() {
 	}
 }
 func (s *fakeSystem) openDetail(id string) { s.details = append(s.details, id) }
-func (s *fakeSystem) authenticate(string) error {
+func (s *fakeSystem) seal(secret []byte) (sealedSecret, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.auths++
-	return s.authErr
+	s.seals++
+	if s.sealErr != nil {
+		return nil, s.sealErr
+	}
+	f := &fakeSealed{sys: s, secret: slices.Clone(secret)}
+	s.sealedKeys = append(s.sealedKeys, f)
+	return f, nil
 }
+
+// fakeSealed is a secret sealed by the Secure Enclave, which opens it as
+// Touch ID does with authErr.
+type fakeSealed struct {
+	sys      *fakeSystem
+	secret   []byte
+	released bool
+}
+
+func (f *fakeSealed) open(string) ([]byte, error) {
+	f.sys.mu.Lock()
+	defer f.sys.mu.Unlock()
+	f.sys.auths++
+	switch {
+	case f.released:
+		return nil, macos.ErrSealedGone
+	case f.sys.authErr != nil:
+		return nil, f.sys.authErr
+	}
+	return slices.Clone(f.secret), nil
+}
+
+func (f *fakeSealed) release() { clear(f.secret); f.released = true }
 func (s *fakeSystem) fill(_ context.Context, _ macos.App, req fillRequest) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -391,30 +425,59 @@ func TestUnlockWithTouchID(t *testing.T) {
 		t.Fatalf("unlocks %d, problem %+v", h.desk.unlocks, h.a.lockProb)
 	}
 
-	// Locked by the app itself, Touch ID of this Mac shows it again,
-	// without the desktop app.
+	// Locked by the app itself, the vault goes, its user key sealed by
+	// the Secure Enclave, which Touch ID of this Mac opens: the vault
+	// decrypts again, without the desktop app.
 	h.a.query = "git"
 	h.a.lock(false)
 	h.settle()
-	if h.a.vault == nil {
-		t.Fatal("the vault was forgotten")
+	if h.a.vault != nil || h.a.index != nil || h.sys.seals != 1 || h.a.sealed == nil {
+		t.Fatalf("vault %v, seals %d", h.a.vault != nil, h.sys.seals)
+	}
+	sealed := h.sys.sealedKeys[0]
+	if !bytes.Equal(sealed.secret, h.f.UserKey.Bytes()) {
+		t.Fatal("sealed something else than the user key")
 	}
 	h.click("Unlock with Touch ID")
 	if h.sys.auths != 1 || h.desk.unlocks != 1 || !h.a.unlocked() {
-		t.Fatalf("auths %d, unlocks %d", h.sys.auths, h.desk.unlocks)
+		t.Fatalf("auths %d, unlocks %d, problem %+v", h.sys.auths, h.desk.unlocks, h.a.lockProb)
 	}
 	if h.a.query != "" {
 		t.Error("the search survived the lock")
 	}
+	if h.a.sealed != nil || !sealed.released {
+		t.Error("the sealed key outlived the unlock")
+	}
 
-	// Locked for good, it asks the desktop app again.
+	// Canceled, nothing happens; Touch ID changed, the key goes.
+	h.a.lock(false)
+	h.settle()
+	h.sys.authErr = macos.ErrCanceled
+	h.click("Unlock with Touch ID")
+	if h.a.unlocked() || h.a.lockProb != nil || h.a.sealed == nil {
+		t.Fatalf("canceled: unlocked %v, problem %+v", h.a.unlocked(), h.a.lockProb)
+	}
+	h.sys.authErr = macos.ErrSealedGone
+	h.click("Unlock with Touch ID")
+	if h.a.unlocked() || h.a.sealed != nil {
+		t.Fatal("the key that no longer opens stayed")
+	}
+	h.has("Touch ID changed")
+	h.sys.authErr = nil
+	h.click("Unlock with Touch ID") // through the desktop app
+	if h.desk.unlocks != 2 || !h.a.unlocked() {
+		t.Fatalf("unlocks %d", h.desk.unlocks)
+	}
+
+	// Locked for good, the key goes too: it asks the desktop app again.
+	h.a.lock(false)
 	h.a.lock(true)
 	h.settle()
-	if h.a.vault != nil {
-		t.Fatal("the vault was kept")
+	if h.a.vault != nil || h.a.sealed != nil || !h.sys.sealedKeys[len(h.sys.sealedKeys)-1].released {
+		t.Fatal("the vault, or its key, was kept")
 	}
 	h.click("Unlock with Touch ID")
-	if h.desk.unlocks != 2 || !h.a.unlocked() {
+	if h.desk.unlocks != 3 || !h.a.unlocked() {
 		t.Fatalf("unlocks %d", h.desk.unlocks)
 	}
 }

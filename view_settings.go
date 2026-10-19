@@ -28,8 +28,8 @@ func (a *app) settingsView(c *ui.Context, k ink) {
 				settingRow(c, k, a.cfg.Email, a.accountStatus(), func() {
 					pushButton(c.Key("change"), k, "Change…", false).OnClick(a.startSetup)
 				})
-				if a.vault != nil {
-					settingRow(c, k, "Lock now", "Forgets the vault until you unlock it again.", func() {
+				if a.vault != nil || a.sealed != nil {
+					settingRow(c, k, "Lock now", "Forgets the vault, and the key Touch ID unlocks with, until you unlock it again.", func() {
 						pushButton(c.Key("lock"), k, "Lock", false).OnClick(func() { a.lock(true); a.page = pageItems })
 					})
 				}
@@ -119,9 +119,7 @@ func (a *app) settingsView(c *ui.Context, k ink) {
 }
 
 func (a *app) quit() {
-	if a.vault != nil {
-		a.vault.Lock()
-	}
+	a.lock(true)
 	a.exit()
 }
 

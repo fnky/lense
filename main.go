@@ -558,9 +558,21 @@ func (m *macSystem) biometrics() bool {
 	return m.bio
 }
 
-func (m *macSystem) authenticate(reason string) error {
-	return macos.Authenticate(reason, "Use Master Password")
+func (m *macSystem) seal(secret []byte) (sealedSecret, error) {
+	s, err := macos.Seal(secret)
+	if err != nil {
+		return nil, err
+	}
+	return macSealed{s}, nil
 }
+
+// macSealed is a secret the Secure Enclave sealed.
+type macSealed struct{ s *macos.Sealed }
+
+func (m macSealed) open(reason string) ([]byte, error) {
+	return m.s.Open(reason, "Use Master Password")
+}
+func (m macSealed) release() { m.s.Release() }
 
 func (m *macSystem) trusted(prompt bool) bool { return macos.Trusted(prompt) }
 

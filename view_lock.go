@@ -28,7 +28,7 @@ func (a *app) lockedView(c *ui.Context, k ink) {
 				switch {
 				case a.opening:
 					label = "Opening Bitwarden…"
-				case a.busy == "touch" && a.vault == nil:
+				case a.busy == "touch" && a.sealed == nil:
 					label = "Confirm in Bitwarden…"
 				case a.busy == "touch":
 					label = "Waiting for Touch ID…"

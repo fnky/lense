@@ -45,9 +45,9 @@ type system interface {
 	openURL(url string)
 	// biometrics reports whether Touch ID can authenticate the user.
 	biometrics() bool
-	// authenticate asks for Touch ID, and waits: run it in the
-	// background.
-	authenticate(reason string) error
+	// seal encrypts secret so that only Touch ID of this Mac opens it
+	// (macos.Seal), and leaves secret as it was.
+	seal(secret []byte) (sealedSecret, error)
 	// trusted reports whether the app may type into others, asking the
 	// user to let it with prompt.
 	trusted(prompt bool) bool
@@ -69,6 +69,14 @@ type system interface {
 	// scrollPhase returns the phases of the trackpad's gesture scrolling a
 	// view, as the view takes its event (macos.ScrollPhase).
 	scrollPhase() (phase, momentum macos.Phase)
+}
+
+// sealedSecret is a secret that only Touch ID opens (macos.Sealed).
+type sealedSecret interface {
+	// open asks for Touch ID, saying why, and waits: run it in the
+	// background. Wipe what it returns once used.
+	open(reason string) ([]byte, error)
+	release()
 }
 
 // fillRequest is a login to type into another app.
@@ -155,14 +163,19 @@ type app struct {
 
 	// The vault, decrypted; locked hides it until Touch ID shows it
 	// again, or forgets it when nil.
-	vault    *bw.Vault
-	index    *search.Index
-	locked   bool
-	busy     string // an unlock under way: "touch", "password"
-	opening  bool   // the desktop app opening, for Touch ID
-	password string
-	lockProb *problem
-	pwField  ui.Handle
+	vault  *bw.Vault
+	index  *search.Index
+	locked bool
+	busy   string // an unlock under way: "touch", "password"
+	// sealed is the user key of sealedFor's account, which the Secure
+	// Enclave sealed as the app locked itself: this Mac's Touch ID opens
+	// it, and the vault decrypts again. Nothing else of the vault stays.
+	sealed    sealedSecret
+	sealedFor string
+	opening   bool // the desktop app opening, for Touch ID
+	password  string
+	lockProb  *problem
+	pwField   ui.Handle
 	// tried is whether Touch ID was tried as the window showed, locked.
 	tried bool
 
@@ -519,14 +532,20 @@ func (a *app) connect() {
 // lock locks the vault: it forgets it with hard, else keeps it for Touch
 // ID when that is on.
 func (a *app) lock(hard bool) {
+	if hard {
+		a.forgetKey()
+	}
 	if a.vault == nil {
 		a.locked = true
 		return
 	}
-	if hard || !a.cfg.TouchID || !a.sys.biometrics() {
-		a.vault.Lock()
-		a.vault, a.index = nil, nil
+	// The vault and its keys go, however it locks. Locking itself, the
+	// app keeps the user key for this Mac's Touch ID, sealed.
+	if !hard && a.cfg.TouchID && a.sys.biometrics() {
+		a.sealKey(a.vault)
 	}
+	a.vault.Lock()
+	a.vault, a.index = nil, nil
 	a.locked = true
 	a.query, a.rows, a.sel = "", nil, -1
 	a.mode, a.fieldSel, a.large = modeResults, 0, nil
@@ -534,6 +553,26 @@ func (a *app) lock(hard bool) {
 	a.prob, a.confirm, a.flash = nil, nil, ""
 	a.tried = false
 	a.onLock()
+}
+
+// sealKey seals the user key of v with the Secure Enclave, for Touch ID
+// of this Mac to open as the app is locked. Without, Touch ID unlocks
+// through the desktop app alone.
+func (a *app) sealKey(v *bw.Vault) {
+	a.forgetKey()
+	key := v.UserKey().Bytes()
+	defer clear(key)
+	if s, err := a.sys.seal(key); err == nil {
+		a.sealed, a.sealedFor = s, v.UserID
+	}
+}
+
+// forgetKey forgets the sealed user key.
+func (a *app) forgetKey() {
+	if a.sealed != nil {
+		a.sealed.release()
+		a.sealed, a.sealedFor = nil, ""
+	}
 }
 
 // opened shows the vault, unlocked: it starts with a new search.
@@ -552,7 +591,7 @@ func (a *app) opened(v *bw.Vault) {
 // touchIDOffered reports whether the locked page offers Touch ID: of this
 // Mac, after the app locked itself, or the desktop app's.
 func (a *app) touchIDOffered() bool {
-	if a.vault != nil && a.cfg.TouchID && a.sys.biometrics() {
+	if a.sealed != nil && a.cfg.TouchID && a.sys.biometrics() {
 		return true
 	}
 	if a.store == nil {
@@ -580,22 +619,42 @@ func (a *app) unlockTouchID(launch bool) {
 		return
 	}
 	a.lockProb = nil
-	if a.vault != nil && a.cfg.TouchID && a.sys.biometrics() {
+	if a.sealed != nil && a.store != nil && a.cfg.TouchID && a.sys.biometrics() {
+		// Touch ID opens the user key, which decrypts the vault anew.
 		a.busy = "touch"
 		a.holdOpen++
+		sealed, userID, st := a.sealed, a.sealedFor, a.store
 		a.spawn(func() {
-			err := a.sys.authenticate("unlock Bitwarden Mini")
+			b, err := sealed.open("unlock Bitwarden Mini")
+			var v *bw.Vault
+			if err == nil {
+				var key bw.SymmetricKey
+				if key, err = bw.NewSymmetricKey(b); err == nil {
+					v, err = st.Decrypt(userID, key)
+					key.Wipe()
+				}
+				clear(b)
+			}
 			a.post(func() {
 				a.busy = ""
 				a.release()
 				switch {
-				case err == nil && a.vault != nil:
-					a.opened(a.vault)
+				case err == nil:
+					a.forgetKey()
+					a.opened(v)
 				case errors.Is(err, macos.ErrFallback):
 					a.pwField.Focus()
-				case errors.Is(err, macos.ErrCanceled), err == nil:
-				default:
+				case errors.Is(err, macos.ErrCanceled):
+				case errors.Is(err, macos.ErrSealedGone):
+					a.forgetKey()
+					a.lockProb = &problem{title: "Touch ID changed", detail: "Its fingerprints changed since Bitwarden Mini locked. Unlock with Bitwarden, or enter your master password."}
+				case errors.Is(err, macos.ErrBiometricsLockout), errors.Is(err, macos.ErrAuthFailed):
 					a.lockProb = &problem{title: err.Error(), detail: "Enter your master password instead."}
+				default:
+					// The key no longer opens the vault: Bitwarden's keys
+					// changed meanwhile.
+					a.forgetKey()
+					a.lockProb = &problem{title: "Your vault's keys changed", detail: "Unlock with Bitwarden, or enter your master password, to read what Bitwarden synced."}
 				}
 			})
 		})

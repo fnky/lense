@@ -13,7 +13,9 @@ decrypts it with:
 - **Touch ID, through the desktop app.** Mini asks Bitwarden over its local
   socket, as Bitwarden's browser extensions do. Bitwarden shows its Touch ID
   prompt and hands back the account's key.
-- **Touch ID of this Mac,** after Mini locked itself, until it quits.
+- **Touch ID of this Mac,** after Mini locked itself, until it quits. Locked,
+  Mini holds nothing of the vault but its key, which the Mac's Secure Enclave
+  seals: only Touch ID opens it, and the vault is decrypted again then.
 - **The master password,** which derives the key offline (PBKDF2 or
   Argon2id, as the account uses).
 
