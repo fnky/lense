@@ -41,6 +41,19 @@ type shell struct {
 
 	saving   sync.Mutex
 	shortcut string // registered
+
+	// moving is the user moving the window, with where the pointer and
+	// the window were as it began; guideWin shows the guides it snaps to,
+	// over the display the pointer is on.
+	moving   windowDrag
+	guideWin *mygo.Window
+	guides   guides
+}
+
+type windowDrag struct {
+	active bool
+	from   mygo.Point
+	x, y   int
 }
 
 func (s *shell) ready() {
@@ -220,6 +233,8 @@ func (s *shell) show() {
 		if s.win == w {
 			s.win = nil
 			a.recordID = ""
+			s.moving.active = false
+			s.hideGuides()
 		}
 	})
 	s.win = w
@@ -246,6 +261,87 @@ func (s *shell) remember(w *mygo.Window) {
 	work := rect{d.WorkArea.X, d.WorkArea.Y, d.WorkArea.Width, d.WorkArea.Height}
 	s.a.cfg.Window.remember(d.ID, work, rect{b.X, b.Y, b.Width, b.Height})
 	s.a.changed()
+}
+
+// drag moves the window with the pointer, from the display it's on to
+// another: near the guides of the display the pointer is on, which it
+// shows, it snaps to them. Its place is saved for the display it ends on.
+func (s *shell) drag(p dragPhase) {
+	w := s.win
+	if w == nil {
+		return
+	}
+	switch p {
+	case dragStart:
+		x, y := w.Position()
+		s.moving = windowDrag{active: true, from: mygo.Screen.CursorScreenPoint(), x: x, y: y}
+	case dragMove:
+		if !s.moving.active {
+			return
+		}
+		cur := mygo.Screen.CursorScreenPoint()
+		d := mygo.Screen.DisplayNearestPoint(cur)
+		work := rect{d.WorkArea.X, d.WorkArea.Y, d.WorkArea.Width, d.WorkArea.Height}
+		x, y, g := snap(s.moving.x+cur.X-s.moving.from.X, s.moving.y+cur.Y-s.moving.from.Y, windowWidth, windowHeight, work)
+		w.SetPosition(x, y)
+		s.showGuides(g)
+	case dragEnd:
+		if !s.moving.active {
+			return
+		}
+		s.moving.active = false
+		s.hideGuides()
+		s.remember(w)
+	}
+}
+
+// showGuides shows the guides over the work area of their display, under
+// the window, and lets the pointer through them.
+func (s *shell) showGuides(g guides) {
+	s.guides = g
+	b := mygo.Rectangle{X: g.work.X, Y: g.work.Y, Width: g.work.W, Height: g.work.H}
+	if s.guideWin == nil {
+		s.guideWin = mygo.NewWindow(mygo.WindowOptions{
+			Title:             "Bitwarden Mini Guides",
+			X:                 b.X,
+			Y:                 b.Y,
+			Width:             b.Width,
+			Height:            b.Height,
+			Frameless:         true,
+			Transparent:       true,
+			Hidden:            true,
+			AlwaysOnTop:       true,
+			DisableShadow:     true,
+			DisableResize:     true,
+			DisableMinimize:   true,
+			DisableMaximize:   true,
+			DisableFullScreen: true,
+			Content:           ui.View(s.guidesView),
+			Page:              mygo.PageOptions{DevTools: mygo.DevToolsDisabled},
+		})
+		s.guideWin.SetIgnoreMouseEvents(true)
+		s.guideWin.SetVisibleOnAllWorkspaces(true)
+	}
+	if s.guideWin.Bounds() != b {
+		s.guideWin.SetBounds(b)
+	}
+	if !s.guideWin.IsVisible() {
+		// Without the keyboard, which the window keeps.
+		s.guideWin.ShowInactive()
+	}
+	s.guideWin.Invalidate()
+}
+
+func (s *shell) hideGuides() {
+	if s.guideWin != nil && s.guideWin.IsVisible() {
+		s.guideWin.Hide()
+	}
+}
+
+func (s *shell) guidesView(c *ui.Context) {
+	c.Root().Background(ui.Transparent)
+	g, accent := s.guides, inkOf(c.Theme()).accent
+	ui.Box(c).Fill().PassThrough().Draw(func(p *ui.Painter, r ui.Rect) { drawGuides(p, r, g, accent) })
 }
 
 // openDetail opens an item in a window of its own.
@@ -395,6 +491,7 @@ func (m *macSystem) pageURL(ctx context.Context, browser macos.App) string {
 	return u
 }
 
+func (m *macSystem) drag(p dragPhase)     { m.s.drag(p) }
 func (m *macSystem) show()                { mygo.RunOnMain(m.s.show) }
 func (m *macSystem) hide()                { mygo.RunOnMain(m.s.hide) }
 func (m *macSystem) openDetail(id string) { mygo.RunOnMain(func() { m.s.openDetail(id) }) }

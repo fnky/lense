@@ -13,8 +13,8 @@ import (
 // settingsView is the settings: the account, locking, the clipboard, the
 // shortcut and filling.
 func (a *app) settingsView(c *ui.Context, k ink) {
-	ui.Row(c).Height(48).Padding(0, 12).Gap(8).AlignItems(ui.Center).DragWindow().
-		BorderWidth(0, 0, 1, 0).BorderColor(k.line).Children(func() {
+	a.dragHandle(ui.Row(c).Height(48).Padding(0, 12).Gap(8).AlignItems(ui.Center).
+		BorderWidth(0, 0, 1, 0).BorderColor(k.line)).Children(func() {
 		if a.configured() {
 			textButton(c.Key("back"), k, "Done", iconBack).OnClick(func() { a.recordID = ""; a.page = pageItems })
 		}

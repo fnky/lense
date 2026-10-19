@@ -58,3 +58,79 @@ func (p *placements) remember(display int64, work rect, win rect) {
 	p.Displays[displayKey(display)] = s
 	p.Last = &s
 }
+
+// guides are the lines a window snaps to as the user moves it, as
+// Raycast's: the edges of columns as wide as the window, centered on the
+// display, and the top of the window where it shows first. They show as
+// the window nears its first place: the columns as its middle nears the
+// display's, the top as its top nears it too.
+type guides struct {
+	work   rect
+	xs     []int   // the columns' edges
+	y      int     // the top
+	vAlpha float64 // how much the columns show, 0 to 1
+	hAlpha float64 // how much the top shows
+	snapX  []int   // the edges the window is on
+	snapY  bool    // whether its top is on the top
+}
+
+// snapDistance is how near a line an edge snaps to it.
+const snapDistance = 12
+
+// snap returns where a window of w×h the user moves to (x, y) goes on a
+// display with the work area work, snapped to the guides that show, and
+// the guides.
+func snap(x, y, w, h int, work rect) (int, int, guides) {
+	cx := work.X + work.W/2
+	g := guides{work: work, y: work.Y + max(0, (work.H-h)/5)}
+	for left := cx - w/2; left >= work.X; left -= w {
+		g.xs = append([]int{left}, g.xs...)
+	}
+	for right := cx - w/2 + w; right <= work.X+work.W; right += w {
+		g.xs = append(g.xs, right)
+	}
+	// The columns show fully near the middle, and fade out by the edge of
+	// the display, or two widths away on a wide one.
+	g.vAlpha = fade(abs(x+w/2-cx), w/8, max(w/2, min(2*w, work.W/2)))
+	g.hAlpha = g.vAlpha * fade(abs(y-g.y), 24, 200)
+	if g.vAlpha > 0 {
+		best, to := snapDistance+1, x
+		for _, l := range g.xs {
+			if d := abs(x - l); d < best {
+				best, to = d, l
+			}
+			if d := abs(x + w - l); d < best {
+				best, to = d, l-w
+			}
+		}
+		x = to
+	}
+	if g.hAlpha > 0 && abs(y-g.y) <= snapDistance {
+		y, g.snapY = g.y, true
+	}
+	for _, l := range g.xs {
+		if l == x || l == x+w {
+			g.snapX = append(g.snapX, l)
+		}
+	}
+	return x, y, g
+}
+
+// fade is 1 at a distance d up to full, 0 from none on, and in between
+// between them.
+func fade(d, full, none int) float64 {
+	switch {
+	case d <= full:
+		return 1
+	case d >= none:
+		return 0
+	}
+	return float64(none-d) / float64(none-full)
+}
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
+}

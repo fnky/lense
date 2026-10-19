@@ -9,7 +9,7 @@ import (
 // lockedView unlocks the vault: with Touch ID, of this Mac or through the
 // Bitwarden app, or with the master password.
 func (a *app) lockedView(c *ui.Context, k ink) {
-	ui.Row(c).Height(44).Padding(0, 10).AlignItems(ui.Center).DragWindow().Children(func() {
+	a.dragHandle(ui.Row(c).Height(44).Padding(0, 10).AlignItems(ui.Center)).Children(func() {
 		ui.Spacer(c)
 		iconButton(c.Key("settings"), k, iconSettings, "Settings (⌘,)").OnClick(a.openSettings)
 	})
@@ -56,7 +56,7 @@ func (a *app) lockedView(c *ui.Context, k ink) {
 // setupView chooses the account: the email it signs in with, and its
 // server, which must be those of an account of the Bitwarden app.
 func (a *app) setupView(c *ui.Context, k ink) {
-	ui.Row(c).Height(44).Padding(0, 10).AlignItems(ui.Center).DragWindow().Children(func() {
+	a.dragHandle(ui.Row(c).Height(44).Padding(0, 10).AlignItems(ui.Center)).Children(func() {
 		if a.configured() {
 			textButton(c.Key("back"), k, "Settings", iconBack).OnClick(func() { a.page = pageSettings })
 		}

@@ -57,6 +57,9 @@ type system interface {
 	show()
 	hide()
 	openDetail(id string)
+	// drag moves the window as the user drags it, snapping it to the
+	// guides it shows.
+	drag(phase dragPhase)
 }
 
 // fillRequest is a login to type into another app.

@@ -48,8 +48,8 @@ func (a *app) itemsView(c *ui.Context, k ink) {
 
 // header is the search, and the vault it searches.
 func (a *app) header(c *ui.Context, k ink) {
-	ui.Row(c).Height(56).Padding(0, 10, 0, 18).Gap(12).AlignItems(ui.Center).DragWindow().
-		BorderWidth(0, 0, 1, 0).BorderColor(k.line).Children(func() {
+	a.dragHandle(ui.Row(c).Height(56).Padding(0, 10, 0, 18).Gap(12).AlignItems(ui.Center).
+		BorderWidth(0, 0, 1, 0).BorderColor(k.line)).Children(func() {
 		ui.Icon(c, iconSearch).FontSize(19).TextColor(k.muted)
 		in := ui.TextInputBase(c.Key("search"), &a.query).Grow(1).Shrink(1).FontSize(19).
 			Placeholder("Search in " + a.vaultName()).Label("Search").Bind(&a.search)
@@ -291,8 +291,8 @@ func (a *app) footer(c *ui.Context, k ink) {
 			keycap(c, k, h, label)
 		}
 	}
-	ui.Row(c).Height(36).Padding(0, 14).Gap(14).AlignItems(ui.Center).BorderWidth(1, 0, 0, 0).BorderColor(k.line).
-		Background(k.pane).Clip().Children(func() {
+	a.dragHandle(ui.Row(c).Height(36).Padding(0, 14).Gap(14).AlignItems(ui.Center).BorderWidth(1, 0, 0, 0).BorderColor(k.line).
+		Background(k.pane).Clip()).Children(func() {
 		if a.flashing(c) {
 			ui.Icon(c, iconCheck).FontSize(13).TextColor(k.okay)
 			ui.Text(c, a.flash).FontSize(12).TextColor(k.text).SingleLine().Shrink(1)

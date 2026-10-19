@@ -6,6 +6,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -69,6 +70,7 @@ type fakeSystem struct {
 	auths    int
 	trust    bool
 	field    bool // a text field has the focus in the app the user was in
+	drags    []dragPhase
 	pageURLs map[string]string
 }
 
@@ -96,6 +98,7 @@ func (s *fakeSystem) fill(_ context.Context, _ macos.App, req fillRequest) error
 }
 func (s *fakeSystem) pageURL(_ context.Context, b macos.App) string { return s.pageURLs[b.BundleID] }
 func (s *fakeSystem) fieldFocused(macos.App) bool                   { return s.field }
+func (s *fakeSystem) drag(p dragPhase)                              { s.drags = append(s.drags, p) }
 
 func (s *fakeSystem) last() string {
 	if len(s.copied) == 0 {
@@ -931,5 +934,45 @@ func TestRevealOnlyTheFieldChosen(t *testing.T) {
 	h.settle()
 	if !h.tt.HasText("b4nk-pass") || h.tt.HasText("8642") {
 		t.Errorf("texts %q", h.tt.Texts())
+	}
+}
+
+func TestDraggingTheWindow(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.unlock()
+	// The header's margin, where nothing else takes the pointer.
+	h.tt.Press(6, 28)
+	h.tt.Move(40, 60)
+	h.tt.Move(80, 90)
+	h.tt.Release(80, 90)
+	h.settle()
+	want := []dragPhase{dragStart, dragMove, dragMove, dragEnd}
+	if !slices.Equal(h.sys.drags, want) {
+		t.Fatalf("drags %v", h.sys.drags)
+	}
+	// The search takes its own presses, and moves nothing.
+	h.sys.drags = nil
+	h.tt.Press(200, 28)
+	h.tt.Move(260, 60)
+	h.tt.Release(260, 60)
+	h.settle()
+	if len(h.sys.drags) != 0 {
+		t.Errorf("the search dragged: %v", h.sys.drags)
+	}
+}
+
+func TestGuidesSnapshot(t *testing.T) {
+	work := rect{0, 25, 1512, 920}
+	x, y, g := snap(380, 25+(920-windowHeight)/5+6, windowWidth, windowHeight, work)
+	tt := ui.NewTester(func(c *ui.Context) {
+		c.Root().Background(ui.RGB(40, 44, 52))
+		ui.Box(c).Fill().Draw(func(p *ui.Painter, r ui.Rect) {
+			drawGuides(p, r, g, ui.Hex("#3D7FF0"))
+			p.Fill(ui.Rect{X: float32(x - work.X), Y: float32(y - work.Y), W: windowWidth, H: windowHeight}, ui.RGBA(255, 255, 255, 0.9), radius)
+		})
+	}, work.W, work.H)
+	snapshot(t, tt, "guides")
+	if x != 376 || !g.snapY {
+		t.Errorf("snapped to %d,%d %+v", x, y, g)
 	}
 }

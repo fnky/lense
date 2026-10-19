@@ -235,3 +235,31 @@ func (a *app) flashing(c *ui.Context) bool {
 	c.After(left)
 	return true
 }
+
+// dragPhase is a step of the user moving the window.
+type dragPhase int
+
+const (
+	dragStart dragPhase = iota
+	dragMove
+	dragEnd
+)
+
+// dragHandle makes e move the window as the pointer drags it, where no
+// element in it takes the press: the window snaps to the guides the shell
+// shows as it goes.
+func (a *app) dragHandle(e ui.Element) ui.Element {
+	return e.HandleInput(func(ev ui.InputEvent) bool {
+		switch {
+		case ev.Kind == ui.InputPointerDown && ev.Button == 0:
+			a.sys.drag(dragStart)
+		case ev.Kind == ui.InputPointerMove && ev.Button == 0:
+			a.sys.drag(dragMove)
+		case ev.Kind == ui.InputPointerUp && ev.Button == 0:
+			a.sys.drag(dragEnd)
+		default:
+			return false
+		}
+		return true
+	})
+}
