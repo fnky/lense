@@ -76,7 +76,7 @@ func (a *app) header(c *ui.Context, k ink) {
 		in.HandleInput(a.searchKey)
 		in.OnChange(a.queryChanged)
 		a.vaultPicker(c.Key("vaults"), k)
-		iconButton(c.Key("settings"), k, iconSettings, "Settings ("+a.cfg.keyHint("settings")+")").OnClick(a.openSettings)
+		letThrough(iconButton(c.Key("settings"), k, iconSettings, "Settings ("+a.cfg.keyHint("settings")+")")).OnClick(a.openSettings)
 	})
 }
 
@@ -402,7 +402,7 @@ func (a *app) footer(c *ui.Context, k ink) {
 		}
 		ui.Spacer(c)
 		if it != nil && a.mode != modeVaults {
-			textButton(c.Key("open-bw"), k, "Open in Bitwarden", iconExternal).Tooltip(a.cfg.keyHint("open-bitwarden")).
+			letThrough(textButton(c.Key("open-bw"), k, "Open in Bitwarden", iconExternal)).Tooltip(a.cfg.keyHint("open-bitwarden")).
 				OnClick(a.openInBitwarden)
 		}
 	})

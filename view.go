@@ -159,7 +159,7 @@ func (a *app) openSettings() {
 
 // iconButton is a borderless button showing an icon.
 func iconButton(c *ui.Context, k ink, svg *ui.SVG, label string) ui.Element {
-	b := letThrough(ui.ButtonBase(c).Size(28, 28).Center().Radius(7).Label(label).Tooltip(label))
+	b := ui.ButtonBase(c).Size(28, 28).Center().Radius(7).Label(label).Tooltip(label)
 	switch {
 	case b.Pressed():
 		b.Background(k.press)
@@ -177,7 +177,7 @@ func iconButton(c *ui.Context, k ink, svg *ui.SVG, label string) ui.Element {
 
 // textButton is a borderless button of a label, and an icon before it.
 func textButton(c *ui.Context, k ink, label string, svg *ui.SVG) ui.Element {
-	b := letThrough(ui.ButtonBase(c).Padding(4, 8).Gap(5).Radius(6).FontSize(12).FontWeight(500).AlignItems(ui.Center))
+	b := ui.ButtonBase(c).Padding(4, 8).Gap(5).Radius(6).FontSize(12).FontWeight(500).AlignItems(ui.Center)
 	b.TextColor(k.muted)
 	switch {
 	case b.Pressed():
@@ -297,9 +297,11 @@ func (a *app) dragHandle(e ui.Element) ui.Element {
 	})
 }
 
-// letThrough makes a control the first to see the input on it, which it
-// takes as controls do, rather than a drag handle around it: an element's
-// input goes to the innermost handler under the pointer.
+// letThrough makes a control of a drag handle the first to see the input
+// on it, which it takes as controls do, rather than the handle: an
+// element's input goes to the innermost handler under the pointer. Only
+// the controls of drag handles have it, as it would take the scrolling of
+// the views around a control from theirs too.
 func letThrough(e ui.Element) ui.Element {
 	return e.HandleInput(func(ui.InputEvent) bool { return false })
 }

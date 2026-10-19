@@ -11,7 +11,7 @@ import (
 func (a *app) lockedView(c *ui.Context, k ink) {
 	a.dragHandle(ui.Row(c).Height(44).Padding(0, 10).AlignItems(ui.Center)).Children(func() {
 		ui.Spacer(c)
-		iconButton(c.Key("settings"), k, iconSettings, "Settings (⌘,)").OnClick(a.openSettings)
+		letThrough(iconButton(c.Key("settings"), k, iconSettings, "Settings (⌘,)")).OnClick(a.openSettings)
 	})
 	ui.Column(c).Grow(1).Center().Padding(0, 0, 44, 0).Children(func() {
 		ui.Column(c).Width(340).Gap(14).AlignItems(ui.Center).Children(func() {
@@ -58,7 +58,7 @@ func (a *app) lockedView(c *ui.Context, k ink) {
 func (a *app) setupView(c *ui.Context, k ink) {
 	a.dragHandle(ui.Row(c).Height(44).Padding(0, 10).AlignItems(ui.Center)).Children(func() {
 		if a.configured() {
-			textButton(c.Key("back"), k, "Settings", iconBack).OnClick(func() { a.page = pageSettings })
+			letThrough(textButton(c.Key("back"), k, "Settings", iconBack)).OnClick(func() { a.page = pageSettings })
 		}
 		ui.Spacer(c)
 	})
