@@ -13,6 +13,7 @@ import (
 	"github.com/egoist/mygo/plugins/glass"
 	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
+	"github.com/egoist/mygo/ui/shader"
 )
 
 // footerHeight is the height of the footer, which the content scrolls
@@ -173,7 +174,7 @@ func (a *app) vaultRow(c *ui.Context, k ink, v vaultChoice) {
 // itemList lists the rows found.
 func (a *app) itemList(c *ui.Context, k ink) {
 	list := ui.List(c.Key("items"), &a.list, len(a.rows), func(i int) { a.rowView(c, k, i) }).
-		Width(listWidth).Shrink(0).Padding(6, 8, 6+footerHeight, 8).ScrollbarInsets(0, 0, footerHeight, 0).
+		Width(listWidth).Shrink(0).Padding(headerFade, 8, 6+footerHeight, 8).ScrollbarInsets(0, 0, footerHeight, 0).
 		Background(k.pane).BorderWidth(0, 1, 0, 0).BorderColor(k.line).Label("Items")
 	list.Children(func() {
 		if len(a.rows) > 0 {
@@ -200,12 +201,12 @@ func (a *app) itemList(c *ui.Context, k ink) {
 func (a *app) rowView(c *ui.Context, k ink, i int) {
 	r := a.rows[i]
 	if r.header != "" {
-		// The header of the section on top pins over the rows, which blur
-		// under it; over the window's material, it tints nothing more.
-		head := ui.Row(c).Padding(10, 10, 4, 10)
-		if k.vibrant {
-			head.Material(glass.Blur{Radius: 10})
-		} else {
+		// The header of the section on top pins over the rows scrolling
+		// under it, which it hides: with the pane's color, or over the
+		// window's material, where it has none, by the rows fading out
+		// under it (underHeader).
+		head := ui.Row(c).Height(sectionHeight).Padding(10, 10, 4, 10)
+		if !k.vibrant {
 			head.Background(k.pane)
 		}
 		head.Children(func() {
@@ -216,6 +217,9 @@ func (a *app) rowView(c *ui.Context, k ink, i int) {
 	// The rows take the pointer, not the keyboard, which the search keeps.
 	chosen := i == a.sel
 	b := ui.Row(c).Padding(7, 10).Gap(10).Radius(8).AlignItems(ui.Center).Selected(chosen)
+	if k.vibrant && a.rows[0].header != "" {
+		b.Effect(underHeader{})
+	}
 	inDetails := chosen && a.mode == modeDetails
 	switch {
 	case inDetails:
@@ -262,6 +266,39 @@ func (a *app) rowView(c *ui.Context, k ink, i int) {
 			ui.Icon(c, iconStar).FontSize(11).TextColor(sub)
 		}
 	})
+}
+
+// sectionHeight is the height of a section's header in the list.
+const sectionHeight = 28
+
+// underHeader fades a row of the list out as it scrolls under the header
+// pinned at the list's top: wholly under the header, and over headerFade
+// DIPs below it. The list clips the row to its box, whose top the header
+// pins to.
+type underHeader struct{}
+
+// headerFade is the list's top padding, by which the first rows are below
+// the first header: they show wholly until they scroll.
+const headerFade = 6
+
+var fadeUnder = shader.MustCompile(`package main
+
+// Cut is where the row starts to show, in DIPs from its top, and Fade how
+// far below that it shows wholly.
+var Cut float
+var Fade float
+
+func ColorEffect(pos vec2, color vec4) vec4 {
+	return color * clamp((pos.y-Cut)/Fade, 0, 1)
+}
+`)
+
+func (underHeader) EffectMargin() ui.Point { return ui.Point{} }
+
+func (underHeader) PaintEffect(p *ui.Painter, box ui.Rect, content *ui.Bitmap, inset ui.Point) {
+	cut := p.Visible().Y + sectionHeight - box.Y
+	fx := fadeUnder.Effect(shader.Options{Uniforms: map[string]any{"Cut": cut, "Fade": float32(headerFade)}})
+	fx.PaintEffect(p, box, content, inset)
 }
 
 // subtitle is the line under an item's name.

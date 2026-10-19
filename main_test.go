@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -1030,5 +1031,36 @@ func TestWindowMaterial(t *testing.T) {
 	h.click("Solid")
 	if h.a.cfg.Material != "solid" || h.a.cfg.translucent() || applied != 1 {
 		t.Fatalf("material %q, applied %d", h.a.cfg.Material, applied)
+	}
+}
+
+func TestRowsFadeUnderThePinnedHeader(t *testing.T) {
+	f := bwtest.Sample()
+	for i := range 20 {
+		f.Add(bw.Item{Type: bw.TypeSecureNote, Name: "Note " + strconv.Itoa(i+10), Notes: "note"}, false)
+	}
+	h := newHarness(t, f, true)
+	h.tt.SetVibrancy(true)
+	h.unlock()
+	// Scroll the list well into All Items, rows under its header.
+	for range 6 {
+		h.tt.Scroll(150, 300, 0, 60)
+		h.settle()
+	}
+	h.tt.Frame()
+	snapshot(t, h.tt, "pinned-header")
+	label, ok := h.tt.Find("ALL ITEMS")
+	if !ok {
+		t.Fatal("no header")
+	}
+	// Right of the label, down to the header's bottom, the material shows
+	// alone.
+	img, s := h.tt.Image(), float32(2)
+	for y := int(label.Y * s); y < int((label.Y+label.H+4)*s); y++ {
+		for x := int((label.X + label.W + 8) * s); x < int((label.X+label.W+180)*s); x++ {
+			if _, _, _, a := img.At(x, y).RGBA(); a > 0x800 {
+				t.Fatalf("a row shows under the header at %d, %d: alpha %d", x, y, a>>8)
+			}
+		}
 	}
 }
