@@ -127,7 +127,7 @@ func (a *app) openSettings() {
 
 // iconButton is a borderless button showing an icon.
 func iconButton(c *ui.Context, k ink, svg *ui.SVG, label string) ui.Element {
-	b := ui.ButtonBase(c).Size(28, 28).Center().Radius(7).Label(label).Tooltip(label)
+	b := letThrough(ui.ButtonBase(c).Size(28, 28).Center().Radius(7).Label(label).Tooltip(label))
 	switch {
 	case b.Pressed():
 		b.Background(k.press)
@@ -145,7 +145,7 @@ func iconButton(c *ui.Context, k ink, svg *ui.SVG, label string) ui.Element {
 
 // textButton is a borderless button of a label, and an icon before it.
 func textButton(c *ui.Context, k ink, label string, svg *ui.SVG) ui.Element {
-	b := ui.ButtonBase(c).Padding(4, 8).Gap(5).Radius(6).FontSize(12).FontWeight(500).AlignItems(ui.Center)
+	b := letThrough(ui.ButtonBase(c).Padding(4, 8).Gap(5).Radius(6).FontSize(12).FontWeight(500).AlignItems(ui.Center))
 	b.TextColor(k.muted)
 	switch {
 	case b.Pressed():
@@ -246,8 +246,9 @@ const (
 )
 
 // dragHandle makes e move the window as the pointer drags it, where no
-// element in it takes the press: the window snaps to the guides the shell
-// shows as it goes.
+// control in it takes the press: the controls let presses through to the
+// handlers of what holds them, and so take theirs first (letThrough). The
+// window snaps to the guides the shell shows as it goes.
 func (a *app) dragHandle(e ui.Element) ui.Element {
 	return e.HandleInput(func(ev ui.InputEvent) bool {
 		switch {
@@ -262,4 +263,11 @@ func (a *app) dragHandle(e ui.Element) ui.Element {
 		}
 		return true
 	})
+}
+
+// letThrough makes a control the first to see the input on it, which it
+// takes as controls do, rather than a drag handle around it: an element's
+// input goes to the innermost handler under the pointer.
+func letThrough(e ui.Element) ui.Element {
+	return e.HandleInput(func(ui.InputEvent) bool { return false })
 }

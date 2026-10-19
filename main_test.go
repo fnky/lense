@@ -959,6 +959,35 @@ func TestDraggingTheWindow(t *testing.T) {
 	if len(h.sys.drags) != 0 {
 		t.Errorf("the search dragged: %v", h.sys.drags)
 	}
+	// So do the buttons of the header and the footer.
+	h.click("Open in Bitwarden")
+	if h.desk.opened != 1 {
+		t.Errorf("Open in Bitwarden opened it %d times", h.desk.opened)
+	}
+	h.click("Vault")
+	if h.a.mode != modeVaults {
+		t.Errorf("the vault picker: mode %v", h.a.mode)
+	}
+	h.key(0, ui.KeyEscape)
+	h.click("Settings (⌘,)")
+	if h.a.page != pageSettings {
+		t.Errorf("the settings button: page %v", h.a.page)
+	}
+	if len(h.sys.drags) != 0 {
+		t.Errorf("a button dragged: %v", h.sys.drags)
+	}
+	// The settings' bar drags, but for its Done button.
+	h.tt.Press(300, 20)
+	h.tt.Move(320, 40)
+	h.tt.Release(320, 40)
+	h.settle()
+	if len(h.sys.drags) != 3 {
+		t.Errorf("the settings' bar: %v", h.sys.drags)
+	}
+	h.click("Done")
+	if h.a.page != pageItems {
+		t.Errorf("Done: page %v", h.a.page)
+	}
 }
 
 func TestGuidesSnapshot(t *testing.T) {

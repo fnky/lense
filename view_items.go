@@ -72,9 +72,9 @@ func (a *app) header(c *ui.Context, k ink) {
 
 // vaultPicker shows the vault searched, and opens the vault selector.
 func (a *app) vaultPicker(c *ui.Context, k ink) {
-	b := ui.ButtonBase(c).Padding(5, 8, 5, 9).Gap(6).Radius(8).AlignItems(ui.Center).
+	b := letThrough(ui.ButtonBase(c).Padding(5, 8, 5, 9).Gap(6).Radius(8).AlignItems(ui.Center).
 		FontSize(12).FontWeight(500).TextColor(k.muted).Label("Vault").
-		Tooltip("Choose the vault to search (" + a.cfg.keyHint("choose-vault") + ")")
+		Tooltip("Choose the vault to search (" + a.cfg.keyHint("choose-vault") + ")"))
 	if b.Hovered() || b.Pressed() || a.mode == modeVaults {
 		b.Background(k.hover).TextColor(k.text)
 	}
