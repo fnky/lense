@@ -1394,3 +1394,25 @@ func TestTouchIDWaitsForBitwardenToAnswer(t *testing.T) {
 		t.Fatalf("unlocked %v, probed %d, asked %d: %+v", h.a.unlocked(), h.desk.probes, h.desk.unlocks, h.a.lockProb)
 	}
 }
+
+func TestVaultChevronsExpand(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.unlock()
+	h.key(ui.Cmd, ui.KeyK)
+	// The chevron shows what the vault holds, rather than choosing it.
+	h.click("Expand Acme Inc.")
+	if h.a.mode != modeVaults || h.a.cfg.Vault != "" || !h.a.vaultOpen[h.f.OrgID] {
+		t.Fatalf("mode %v, vault %q, open %v", h.a.mode, h.a.cfg.Vault, h.a.vaultOpen)
+	}
+	h.has("Engineering")
+	snapshot(t, h.tt, "vaults-expanded")
+	h.click("Collapse Acme Inc.")
+	if h.a.vaultOpen[h.f.OrgID] || h.tt.HasText("Engineering") {
+		t.Fatal("still open")
+	}
+	// The rest of the row chooses it.
+	h.click("Acme Inc.")
+	if h.a.cfg.Vault != h.f.OrgID || h.a.mode != modeResults {
+		t.Fatalf("vault %q, mode %v", h.a.cfg.Vault, h.a.mode)
+	}
+}

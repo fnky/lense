@@ -138,7 +138,7 @@ func (a *app) vaultMenu(c *ui.Context, k ink) {
 
 func (a *app) vaultRow(c *ui.Context, k ink, v vaultChoice) {
 	cursor := v.id == a.vaultCursor
-	row := ui.Row(c).Padding(6, 8, 6, 8+float32(v.depth)*18).Gap(8).Radius(7).AlignItems(ui.Center).Label(v.name)
+	row := ui.Row(c).Padding(5, 8, 5, 4+float32(v.depth)*18).Gap(6).Radius(7).AlignItems(ui.Center).Label(v.name)
 	title, sub := k.text, k.faint
 	switch {
 	case cursor:
@@ -155,13 +155,31 @@ func (a *app) vaultRow(c *ui.Context, k ink, v vaultChoice) {
 		a.search.Focus()
 	})
 	row.Children(func() {
-		switch {
-		case v.kids && a.vaultOpen[v.id]:
-			ui.Icon(c, iconChevron).FontSize(11).TextColor(sub)
-		case v.kids:
-			ui.Icon(c, iconChevron).FontSize(11).TextColor(sub).Rotate(-90)
-		default:
-			ui.Box(c).Size(11, 11)
+		if v.kids {
+			// The chevron shows or hides what the vault holds, as Right
+			// and Left do, rather than choosing it.
+			open := a.vaultOpen[v.id]
+			label := "Expand " + v.name
+			if open {
+				label = "Collapse " + v.name
+			}
+			tw := ui.ButtonBase(c.Key("disclose")).Size(18, 18).Center().Radius(4).Label(label)
+			if tw.Hovered() {
+				tw.Background(k.hover)
+			}
+			tw.OnClick(func() {
+				a.vaultOpen[v.id] = !open
+				a.vaultCursor = v.id
+				a.search.Focus()
+			})
+			tw.Children(func() {
+				ic := ui.Icon(c, iconChevron).FontSize(11).TextColor(sub)
+				if !open {
+					ic.Rotate(-90)
+				}
+			})
+		} else {
+			ui.Box(c).Size(18, 18)
 		}
 		ui.Icon(c, vaultIcon(v.id)).FontSize(14).TextColor(title)
 		ui.Text(c, v.name).TextColor(title).SingleLine().Grow(1).Shrink(1)
