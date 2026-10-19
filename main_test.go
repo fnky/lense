@@ -1198,3 +1198,39 @@ func TestWebsiteFieldOpensAndFills(t *testing.T) {
 	h.settle()
 	snapshot(t, h.tt, "field-hover")
 }
+
+func TestCopyTakesTheCountdownsPlace(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.unlock()
+	secs, ok := h.tt.Find("30s")
+	if !ok {
+		t.Fatalf("no countdown in %q", h.tt.Texts())
+	}
+	// ring reports whether the countdown's ring shows, blue, after the
+	// seconds, and ink whether anything shows there.
+	ring := func() (blue, ink bool) {
+		img := h.tt.Image()
+		for y := int(secs.Y * 2); y < int((secs.Y+secs.H)*2); y++ {
+			for x := int((secs.X + secs.W + 4) * 2); x < int((secs.X+secs.W+24)*2); x++ {
+				r, g, b, _ := img.At(x, y).RGBA()
+				r, g, b = r>>8, g>>8, b>>8
+				if b > r+60 && b > g+30 {
+					blue = true
+				}
+				if r < 200 {
+					ink = true
+				}
+			}
+		}
+		return blue, ink
+	}
+	if blue, _ := ring(); !blue {
+		t.Fatal("no ring before the pointer comes")
+	}
+	h.tt.Move(secs.X-200, secs.Y+secs.H/2)
+	h.tt.Advance(200 * time.Millisecond)
+	snapshot(t, h.tt, "code-hover")
+	if blue, ink := ring(); blue || !ink {
+		t.Fatalf("hovered: the ring shows %v, copy shows %v", blue, ink)
+	}
+}

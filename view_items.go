@@ -709,18 +709,28 @@ func (a *app) fieldRow(c *ui.Context, k ink, it *bw.Item, f field, key string, r
 				val.SingleLine()
 			}
 		})
-		// Copy shows as the pointer comes, before what the row always
-		// shows, which stays in its place.
-		cp := iconButton(c.Key("copy"), k, iconCopy, "Copy").OnClick(func() {
-			a.copyField(it, f)
-			a.search.Focus()
-		})
-		if !row.Hovered() && !focused {
-			cp.Opacity(0)
+		// Copy fades in as the pointer comes: in the place of the
+		// countdown of a code, which fades out, else before the row's
+		// other buttons, which stay in their places.
+		shown := float32(0)
+		if row.Hovered() || focused {
+			shown = 1
+		}
+		shown = row.Animate("copy", shown, 120*time.Millisecond)
+		copyButton := func() ui.Element {
+			return iconButton(c.Key("copy"), k, iconCopy, "Copy").Opacity(shown).OnClick(func() {
+				a.copyField(it, f)
+				a.search.Focus()
+			})
 		}
 		if f.kind == "totp" {
 			_, left, _ := a.code(it)
-			countdown(c, k, left, 30)
+			ui.Row(c.Key("countdown")).Height(28).AlignItems(ui.Center).Children(func() {
+				countdown(c, k, left, 30).Opacity(1 - shown)
+				copyButton().Absolute().Top(0).Right(0)
+			})
+		} else {
+			copyButton()
 		}
 		if f.secret && f.kind != "totp" {
 			ic, label := iconEye, "Reveal"
@@ -765,13 +775,13 @@ func cardNumber(n string) string {
 }
 
 // countdown is a ring that empties as a one-time password expires.
-func countdown(c *ui.Context, k ink, left time.Duration, period float32) {
+func countdown(c *ui.Context, k ink, left time.Duration, period float32) ui.Element {
 	frac := float32(left.Seconds()) / period
 	color := k.accent
 	if left < 6*time.Second {
 		color = k.danger
 	}
-	ui.Row(c).Gap(5).AlignItems(ui.Center).Children(func() {
+	return ui.Row(c).Gap(5).AlignItems(ui.Center).Children(func() {
 		ui.Text(c, fmt.Sprintf("%ds", int(left.Seconds()+0.5))).FontSize(11).FontFeatures("tnum").TextColor(k.muted)
 		track := k.line
 		ui.Box(c).Size(16, 16).Draw(func(p *ui.Painter, r ui.Rect) {
