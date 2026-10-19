@@ -19,6 +19,7 @@ const (
 type ink struct {
 	text, muted, faint ui.Color
 	hover, press, line ui.Color
+	edge               ui.Color // the border of buttons and pickers
 	accent, onAccent   ui.Color
 	bg, pane, card     ui.Color
 	danger, warn, okay ui.Color
@@ -39,6 +40,7 @@ func inkOf(t *ui.Theme) ink {
 		hover:    t.Text.Alpha(0.05),
 		press:    t.Text.Alpha(0.09),
 		line:     t.Text.Alpha(0.09),
+		edge:     t.Text.Alpha(0.16),
 		accent:   ui.Hex("#175DDC"),
 		onAccent: ui.RGB(255, 255, 255),
 		bg:       ui.Hex("#FFFFFF"),
@@ -222,6 +224,67 @@ func textButton(c *ui.Context, k ink, label string, svg *ui.SVG) ui.Element {
 	return b
 }
 
+// pushButton is a button of a label, as textButton, with a border: the
+// buttons of the settings, the lock and dialogs, where nothing around
+// them marks them buttons. Disabled, its label fades, its border stays.
+func pushButton(c *ui.Context, k ink, label string, disabled bool) ui.Element {
+	b := textButton(c, k, label, nil).Padding(4, 10).Border(1, k.edge)
+	if disabled {
+		b.Disabled(true).Background(ui.Transparent).TextColor(k.faint)
+	}
+	return b
+}
+
+// primaryButton is a pushButton in Bitwarden's blue, for what a page is
+// for, without a change under the pointer, as it has a face of its own.
+// Disabled, it is a disabled pushButton, as macOS's default button is.
+func primaryButton(c *ui.Context, k ink, label string, disabled bool) ui.Element {
+	b := ui.ButtonBase(c).Padding(4, 10).Radius(6).FontSize(12).FontWeight(600).Label(label)
+	switch {
+	case disabled:
+		b.Disabled(true).Border(1, k.edge).TextColor(k.faint)
+	case b.Pressed():
+		b.Border(1, ui.Transparent).Background(k.accent.Mix(ui.RGB(0, 0, 0), 0.15)).TextColor(k.onAccent)
+	default:
+		b.Border(1, ui.Transparent).Background(k.accent).TextColor(k.onAccent)
+	}
+	b.Children(func() { ui.Text(c, label).NoWrap() })
+	return b
+}
+
+// picker chooses one of options into *selected, as the vault picker
+// does, with a border: its options show in a popup of the window's
+// colors, the chosen one checked.
+func picker(c *ui.Context, k ink, selected *string, options []string) ui.Element {
+	sel := ui.SelectBase(c, selected)
+	b := sel.Trigger.Padding(4, 8, 4, 10).Gap(6).Radius(6).AlignItems(ui.Center).Justify(ui.SpaceBetween).
+		FontSize(12).FontWeight(500).TextColor(k.muted).Border(1, k.edge)
+	if b.Hovered() || b.Pressed() || sel.Open() {
+		b.Background(k.hover).TextColor(k.text)
+	}
+	b.Children(func() {
+		ui.Text(c, *selected).SingleLine().Shrink(1)
+		ui.Icon(c, iconChevron).FontSize(11)
+	})
+	sel.Popup(func(panel ui.Element) {
+		panel.Margin(4, 0, 0, 0).Padding(4).Radius(8).Background(k.raised).Border(1, k.line).
+			Shadow(0, 6, 20, 0, ui.RGBA(0, 0, 0, 0.18))
+		for _, opt := range options {
+			item := sel.Item(opt).Padding(5, 8).Gap(8).Radius(5).AlignItems(ui.Center).FontSize(12)
+			if item.Highlighted() {
+				item.Background(k.selected)
+			}
+			item.Children(func() {
+				ui.Text(c, opt).SingleLine().Grow(1)
+				if opt == *selected {
+					ui.Icon(c, iconCheck).FontSize(12).TextColor(k.accent)
+				}
+			})
+		}
+	})
+	return b
+}
+
 // problemBox says what went wrong, and offers to fix it.
 func problemBox(c *ui.Context, k ink, p *problem) ui.Element {
 	box := ui.Row(c).Gap(10).Padding(10, 12).Radius(10).Background(k.danger.Alpha(0.08)).AlignItems(ui.Start)
@@ -233,7 +296,7 @@ func problemBox(c *ui.Context, k ink, p *problem) ui.Element {
 				ui.Text(c, p.detail).FontSize(12).TextColor(k.muted).LineHeight(1.4)
 			}
 			if p.fix != "" && p.do != nil {
-				ui.Button(c.Key("fix"), p.fix).AlignSelf(ui.Start).Margin(4, 0, 0, 0).OnClick(p.do)
+				pushButton(c.Key("fix"), k, p.fix, false).AlignSelf(ui.Start).Margin(4, 0, 0, 0).OnClick(p.do)
 			}
 		})
 	})

@@ -1299,3 +1299,22 @@ func TestHidingForgetsWhatShowed(t *testing.T) {
 		t.Fatalf("query %q, chosen %v", h.a.query, h.a.selected())
 	}
 }
+
+func TestPickersChoose(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.unlock()
+	h.tt.SetDark(true)
+	h.tt.SetSize(windowWidth, 2400) // all of the settings, unscrolled
+	h.key(ui.Cmd, ui.KeyComma)
+	snapshot(t, h.tt, "settings-dark")
+	h.click("Popover")
+	h.has("Solid", "Menu", "HUD", "Sidebar", "Under Window")
+	snapshot(t, h.tt, "picker-open")
+	h.click("Solid")
+	if h.a.cfg.Material != "solid" {
+		t.Fatalf("material %q", h.a.cfg.Material)
+	}
+	if h.tt.HasText("Under Window") {
+		t.Fatal("the picker stays open")
+	}
+}

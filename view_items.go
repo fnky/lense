@@ -856,8 +856,8 @@ func (a *app) confirmView(c *ui.Context, k ink) {
 				ui.Text(c, a.confirmErr).FontSize(12).TextColor(k.danger)
 			}
 			ui.Row(c).Gap(8).Justify(ui.End).Children(func() {
-				ui.Button(c.Key("cancel"), "Cancel").OnClick(a.closeConfirm)
-				ui.PrimaryButton(c.Key("ok"), "Continue").Disabled(a.confirmPw == "" || a.busy != "").OnClick(a.confirmPassword)
+				pushButton(c.Key("cancel"), k, "Cancel", false).OnClick(a.closeConfirm)
+				primaryButton(c.Key("ok"), k, "Continue", a.confirmPw == "" || a.busy != "").OnClick(a.confirmPassword)
 			})
 		})
 	})

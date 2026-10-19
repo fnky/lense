@@ -31,10 +31,10 @@ func (a *app) lockedView(c *ui.Context, k ink) {
 						label = "Confirm in Bitwarden…"
 					}
 				}
-				b := ui.PrimaryButton(c.Key("touch"), label).AlignSelf(ui.Stretch).Disabled(a.busy != "")
-				b.OnClick(a.unlockTouchID)
+				primaryButton(c.Key("touch"), k, label, a.busy != "").AlignSelf(ui.Stretch).Padding(7, 12).OnClick(a.unlockTouchID)
 			}
-			ui.Row(c).Gap(8).AlignSelf(ui.Stretch).Children(func() {
+			// The button as tall as the field.
+			ui.Row(c).Gap(8).AlignSelf(ui.Stretch).AlignItems(ui.Stretch).Children(func() {
 				in := ui.TextInput(c.Key("password"), &a.password).Password().Grow(1).
 					Placeholder("Master password").Label("Master password").Bind(&a.pwField).
 					Disabled(a.busy == "password").OnSubmit(a.unlockPassword)
@@ -44,7 +44,7 @@ func (a *app) lockedView(c *ui.Context, k ink) {
 				if a.busy == "password" {
 					ui.Spinner(c).Size(16, 16).AlignSelf(ui.Center)
 				} else {
-					ui.Button(c.Key("unlock"), "Unlock").Disabled(a.password == "" || a.busy != "").OnClick(a.unlockPassword)
+					pushButton(c.Key("unlock"), k, "Unlock", a.password == "" || a.busy != "").OnClick(a.unlockPassword)
 				}
 			})
 			ui.Text(c, "Your master password unlocks the vault on this Mac, without going online.").
@@ -97,7 +97,7 @@ func (a *app) setupView(c *ui.Context, k ink) {
 				problemBox(c.Key("prob"), k, a.setupProb)
 			}
 			ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-				ui.PrimaryButton(c.Key("continue"), "Continue").Disabled(a.connecting).OnClick(a.connect)
+				primaryButton(c.Key("continue"), k, "Continue", a.connecting).OnClick(a.connect)
 				if a.connecting {
 					ui.Spinner(c).Size(14, 14)
 				}

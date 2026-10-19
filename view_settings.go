@@ -26,11 +26,11 @@ func (a *app) settingsView(c *ui.Context, k ink) {
 		ui.Column(c).Padding(18, 28, 22, 28).Gap(22).Translate(0, off).Children(func() {
 			section(c, k, "Account", func() {
 				settingRow(c, k, a.cfg.Email, a.accountStatus(), func() {
-					ui.Button(c.Key("change"), "Change…").OnClick(a.startSetup)
+					pushButton(c.Key("change"), k, "Change…", false).OnClick(a.startSetup)
 				})
 				if a.vault != nil {
 					settingRow(c, k, "Lock now", "Forgets the vault until you unlock it again.", func() {
-						ui.Button(c.Key("lock"), "Lock").OnClick(func() { a.lock(true); a.page = pageItems })
+						pushButton(c.Key("lock"), k, "Lock", false).OnClick(func() { a.lock(true); a.page = pageItems })
 					})
 				}
 			})
@@ -39,7 +39,7 @@ func (a *app) settingsView(c *ui.Context, k ink) {
 				labels := []string{"Never", "After 1 minute", "After 5 minutes", "After 10 minutes", "After 15 minutes", "After 30 minutes", "After 1 hour", "After 4 hours"}
 				sel := labels[max(0, slices.Index(minutes, a.cfg.AutoLock))]
 				settingRow(c, k, "Lock when idle", "When the Mac has had no input for this long.", func() {
-					ui.Select(c.Key("autolock"), &sel, labels).Width(170).OnChange(func() {
+					picker(c.Key("autolock"), k, &sel, labels).Width(170).OnChange(func() {
 						a.cfg.AutoLock = minutes[slices.Index(labels, sel)]
 						a.changed()
 					})
@@ -61,7 +61,7 @@ func (a *app) settingsView(c *ui.Context, k ink) {
 					}
 				}
 				settingRow(c, k, "Window material", "What shows through behind the window, blurred, as macOS's own panels do. Solid shows none.", func() {
-					ui.Select(c.Key("material"), &sel, labels).Width(170).OnChange(func() {
+					picker(c.Key("material"), k, &sel, labels).Width(170).OnChange(func() {
 						for _, m := range materials {
 							if m.label == sel {
 								a.cfg.Material = m.id
@@ -82,7 +82,7 @@ func (a *app) settingsView(c *ui.Context, k ink) {
 				}
 				sel := labels[i]
 				settingRow(c, k, "Clear copied secrets", "Passwords and codes leave the clipboard, unless you copied something else since.", func() {
-					ui.Select(c.Key("clear"), &sel, labels).Width(170).OnChange(func() {
+					picker(c.Key("clear"), k, &sel, labels).Width(170).OnChange(func() {
 						a.cfg.ClearClipboard = secs[slices.Index(labels, sel)]
 						a.changed()
 					})
@@ -100,7 +100,7 @@ func (a *app) settingsView(c *ui.Context, k ink) {
 						})
 						return
 					}
-					ui.Button(c.Key("allow"), "Allow…").OnClick(func() {
+					pushButton(c.Key("allow"), k, "Allow…", false).OnClick(func() {
 						a.sys.trusted(true)
 						a.sys.openURL(macos.AccessibilitySettingsURL)
 					})
