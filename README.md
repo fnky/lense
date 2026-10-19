@@ -127,6 +127,26 @@ Filters combine with words and with each other, and complete as you type `=`.
 - **Automation** of your browser, to read the page it shows, for suggestions.
   Safari and Chromium browsers tell it; Firefox doesn't.
 
+## Security
+
+- Unlocked, only what lists and searches the vault is decrypted (see above);
+  locked, Mini holds nothing of it, but the key Touch ID opens, sealed by the
+  Secure Enclave.
+- Debuggers can't attach to Mini: it denies them as it starts. Set
+  `BWMINI_DEBUG=1` to debug it.
+- Core dumps are off, and the master password fields turn on Secure Event
+  Input, as macOS's own do, so that other apps don't see what you type.
+- Builds signed with a Developer ID (`macos.signingIdentity` in `mygo.json`)
+  run under the hardened runtime, which keeps debuggers, injected libraries
+  and other processes out of Mini's memory; `entitlements.plist` lets it ask
+  your browser for its page. Builds signed ad hoc don't, unless you sign them
+  so yourself:
+
+  ```sh
+  codesign --force --deep --options runtime --entitlements entitlements.plist \
+    --sign - "build/darwin-arm64/Bitwarden Mini.app"
+  ```
+
 ## Limits
 
 - Items are added and changed in Bitwarden: its desktop app offers no local way

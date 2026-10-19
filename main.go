@@ -602,6 +602,14 @@ func (m *macSystem) hide()                { mygo.RunOnMain(m.s.hide) }
 func (m *macSystem) openDetail(id string) { mygo.RunOnMain(func() { m.s.openDetail(id) }) }
 
 func main() {
+	// Debuggers, and what reads memory through them, keep out of the
+	// vault: BWMINI_DEBUG lets them in, to debug the app. memguard keeps
+	// the system from dumping its memory already.
+	if os.Getenv("BWMINI_DEBUG") == "" {
+		if err := macos.DenyDebuggers(); err != nil {
+			log.Print(err)
+		}
+	}
 	if !mygo.App.RequestSingleInstanceLock() {
 		return // the running one takes over
 	}
