@@ -47,33 +47,58 @@ func FocusedField() FieldKind {
 	}
 	kind := FieldNone
 	withPool(func() {
-		sys := axCreateSystemWide()
-		if sys == 0 {
-			return
-		}
-		defer cfRelease(sys)
-		el := copyAttr(sys, "AXFocusedUIElement")
-		if el == 0 {
-			return
-		}
-		defer cfRelease(el)
-		role, subrole := "", ""
-		if r := copyAttr(el, "AXRole"); r != 0 {
-			role = goString(objc.ID(r))
-			cfRelease(r)
-		}
-		if r := copyAttr(el, "AXSubrole"); r != 0 {
-			subrole = goString(objc.ID(r))
-			cfRelease(r)
-		}
-		switch {
-		case subrole == "AXSecureTextField" || role == "AXSecureTextField":
-			kind = FieldPassword
-		case role == "AXTextField" || role == "AXComboBox" || role == "AXSearchField" || role == "AXTextArea":
-			kind = FieldText
+		if sys := axCreateSystemWide(); sys != 0 {
+			kind = focusedKind(sys)
+			cfRelease(sys)
 		}
 	})
 	return kind
+}
+
+// FocusedFieldOf returns the kind of the element that has the keyboard
+// focus in an app, or would have as it comes to the front.
+func FocusedFieldOf(pid int) FieldKind {
+	if load() != nil || pid <= 0 {
+		return FieldNone
+	}
+	kind := FieldNone
+	withPool(func() {
+		if app := axCreateApplication(int32(pid)); app != 0 {
+			kind = focusedKind(app)
+			cfRelease(app)
+		}
+	})
+	return kind
+}
+
+// focusedKind returns the kind of the focused element of an accessibility
+// element: the system's, or an app's.
+func focusedKind(of uintptr) FieldKind {
+	el := copyAttr(of, "AXFocusedUIElement")
+	if el == 0 {
+		return FieldNone
+	}
+	defer cfRelease(el)
+	role, subrole := "", ""
+	if r := copyAttr(el, "AXRole"); r != 0 {
+		role = goString(objc.ID(r))
+		cfRelease(r)
+	}
+	if r := copyAttr(el, "AXSubrole"); r != 0 {
+		subrole = goString(objc.ID(r))
+		cfRelease(r)
+	}
+	// Login forms have fields of one line: a search field, or a text area
+	// as a terminal's or an editor's, is no place for a username.
+	switch {
+	case subrole == "AXSecureTextField" || role == "AXSecureTextField":
+		return FieldPassword
+	case subrole == "AXSearchField":
+		return FieldNone
+	case role == "AXTextField" || role == "AXComboBox":
+		return FieldText
+	}
+	return FieldNone
 }
 
 // EnableWebAccessibility asks a Chromium browser or an Electron app to

@@ -20,6 +20,7 @@ func OpenApp(bundleID string, urls ...string) error { return errors.ErrUnsupport
 func IsBrowser(bundleID string) bool                { return false }
 func Trusted(prompt bool) bool                      { return false }
 func FocusedField() FieldKind                       { return FieldNone }
+func FocusedFieldOf(pid int) FieldKind              { return FieldNone }
 func EnableWebAccessibility(pid int)                {}
 func PressKey(code uint16)                          {}
 func SelectAll()                                    {}
