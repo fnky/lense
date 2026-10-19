@@ -85,7 +85,7 @@ func (a *app) header(c *ui.Context, k ink) {
 func (a *app) vaultPicker(c *ui.Context, k ink) {
 	b := letThrough(ui.ButtonBase(c).Padding(5, 8, 5, 9).Gap(6).Radius(8).AlignItems(ui.Center).
 		FontSize(12).FontWeight(500).TextColor(k.muted).Label("Vault").
-		Tooltip("Choose the vault to search (" + a.cfg.keyHint("choose-vault") + ")"))
+		Description("Choose the vault to search (" + a.cfg.keyHint("choose-vault") + ")"))
 	if b.Hovered() || b.Pressed() || a.mode == modeVaults {
 		b.Background(k.hover).TextColor(k.text)
 	}
@@ -454,8 +454,8 @@ func (a *app) footerBar(c *ui.Context, k ink, bar ui.Element) {
 		}
 		ui.Spacer(c)
 		if it != nil && a.mode != modeVaults {
-			letThrough(textButton(c.Key("open-bw"), k, "Open in Bitwarden", iconExternal)).Tooltip(a.cfg.keyHint("open-bitwarden")).
-				OnClick(a.openInBitwarden)
+			letThrough(textButton(c.Key("open-bw"), k, "Open in Bitwarden", iconExternal)).
+				Description(a.cfg.keyHint("open-bitwarden")).OnClick(a.openInBitwarden)
 		}
 	})
 }
@@ -675,7 +675,7 @@ func (a *app) fieldRow(c *ui.Context, k ink, it *bw.Item, f field, key string, r
 	}
 	// The row takes the pointer, not the keyboard, which the search keeps.
 	row := ui.Row(c).Padding(9, 12).Gap(10).AlignItems(ui.Center).Label(f.label).
-		Tooltip("Click to copy, or drag into a field")
+		Description("Click to copy, or drag into a field")
 	if divider {
 		row.BorderWidth(1, 0, 0, 0).BorderColor(k.line)
 	}

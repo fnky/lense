@@ -92,6 +92,12 @@ func theme(t *ui.Theme) *ui.Theme {
 	th.AccentText = k.onAccent
 	th.Focus = k.accent.Alpha(0.5)
 	th.Selection = k.accent.Alpha(0.3)
+	// Tooltips take the window's appearance, as macOS's do, rather than
+	// stand out from it inverted.
+	th.Inverse, th.InverseText = ui.Hex("#FFFFFF"), k.text
+	if t.Dark {
+		th.Inverse = ui.Hex("#2E3034")
+	}
 	return &th
 }
 
@@ -173,7 +179,8 @@ func (a *app) openSettings() {
 	a.page = pageSettings
 }
 
-// iconButton is a borderless button showing an icon.
+// iconButton is a borderless button showing an icon, which a tooltip
+// names: buttons of a label, and rows, say what they are themselves.
 func iconButton(c *ui.Context, k ink, svg *ui.SVG, label string) ui.Element {
 	b := ui.ButtonBase(c).Size(28, 28).Center().Radius(7).Label(label).Tooltip(label)
 	switch {

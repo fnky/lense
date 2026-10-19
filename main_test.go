@@ -1127,3 +1127,51 @@ func TestFooterOverAppKitsMaterial(t *testing.T) {
 		t.Fatalf("over the settings and back: %v", shown)
 	}
 }
+
+func TestTooltipsNameIconsInTheWindowsAppearance(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.tt.SetDark(true)
+	h.unlock()
+	// rest rests the pointer on the element showing or labeled s, and
+	// returns the texts that show then, and where it is.
+	rest := func(s string) ([]string, ui.Rect) {
+		t.Helper()
+		r, ok := h.tt.Find(s)
+		if !ok {
+			t.Fatalf("no %q", s)
+		}
+		h.tt.Move(10, 470)
+		h.tt.Advance(time.Second)
+		before := h.tt.Texts()
+		h.tt.Move(r.X+r.W/2, r.Y+r.H/2)
+		h.tt.Advance(time.Second)
+		// The texts that show once more than before: labels are texts too.
+		seen := map[string]int{}
+		for _, s := range before {
+			seen[s]++
+		}
+		var tips []string
+		for _, s := range h.tt.Texts() {
+			if seen[s]--; seen[s] < 0 {
+				tips = append(tips, s)
+			}
+		}
+		return tips, r
+	}
+	// What says what it does itself has no tip.
+	for _, s := range []string{"Open in Bitwarden", "All Vaults", "username"} {
+		if tips, _ := rest(s); len(tips) > 0 {
+			t.Errorf("%s shows a tip: %q", s, tips)
+		}
+	}
+	// An icon has, in the window's appearance: dark in dark mode.
+	tips, r := rest("Settings (⌘,)")
+	if !slices.Equal(tips, []string{"Settings (⌘,)"}) {
+		t.Fatalf("the settings' tip: %q", tips)
+	}
+	snapshot(t, h.tt, "tooltip-dark")
+	below := h.tt.Image().At(int((r.X+r.W/2)*2), int((r.Y+r.H+9)*2))
+	if c, _, _, _ := below.RGBA(); c>>8 > 80 {
+		t.Fatalf("the tip is light in dark mode: %v", below)
+	}
+}
