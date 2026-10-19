@@ -173,8 +173,8 @@ type app struct {
 	vaultCursor string
 	vaultOpen   map[string]bool
 	large       *largeType
-	// reveal shows the secrets of an item; reprompted is the items whose
-	// master password was asked for, as their owners asked.
+	// reveal shows secret fields, by fieldKey; reprompted is the items
+	// whose master password was asked for, as their owners asked.
 	reveal     map[string]bool
 	reprompted map[string]bool
 	flash      string

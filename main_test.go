@@ -801,7 +801,7 @@ func TestEscapeForgetsWhatShowed(t *testing.T) {
 	h.unlock()
 	h.tt.Type("git")
 	h.settle()
-	h.a.reveal[h.a.selected().ID] = true
+	h.a.reveal[fieldKey(h.a.selected().ID, 1)] = true
 	h.key(0, ui.KeyEscape) // clears the search
 	if h.a.query != "" || h.sys.hidden != 0 {
 		t.Fatalf("query %q, hidden %d", h.a.query, h.sys.hidden)
@@ -879,7 +879,7 @@ func TestLeavingTheFieldsConcealsPasswords(t *testing.T) {
 		h.key(0, ui.KeyRight)
 		h.key(0, ui.KeyDown)
 		h.key(0, ui.KeyRight)
-		if !h.a.reveal[h.a.selected().ID] {
+		if !h.a.reveal[fieldKey(h.a.selected().ID, 1)] {
 			t.Fatal("not revealed")
 		}
 		h.has("gh-s3cret!")
@@ -901,5 +901,35 @@ func TestLeavingTheFieldsConcealsPasswords(t *testing.T) {
 		if h.a.mode == modeDetails || len(h.a.reveal) != 0 || h.tt.HasText("gh-s3cret!") {
 			t.Errorf("after %s: mode %v, reveal %v", leave.how, h.a.mode, h.a.reveal)
 		}
+	}
+}
+
+func TestRevealOnlyTheFieldChosen(t *testing.T) {
+	f := bwtest.Sample()
+	f.Add(bw.Item{Type: bw.TypeLogin, Name: "Bank", Login: &bw.Login{Username: "ada", Password: "b4nk-pass"},
+		Fields: []bw.Field{{Type: bw.FieldHidden, Name: "PIN", Value: "8642"}}}, false)
+	h := newHarness(t, f, true)
+	h.unlock()
+	h.tt.Type("bank")
+	h.settle()
+	h.key(0, ui.KeyRight) // username
+	h.key(0, ui.KeyDown)  // password
+	h.key(0, ui.KeyRight) // reveals it alone
+	h.has("b4nk-pass")
+	if h.tt.HasText("8642") {
+		t.Fatal("the PIN showed with the password")
+	}
+	h.key(0, ui.KeyDown)  // PIN
+	h.key(0, ui.KeyRight) // reveals it too
+	h.has("b4nk-pass", "8642")
+	snapshot(t, h.tt, "reveal-one")
+	// The eye of a field reveals that field alone.
+	h.key(0, ui.KeyLeft)
+	if err := h.tt.Click("Reveal (hold ⌥)"); err != nil {
+		t.Fatal(err)
+	}
+	h.settle()
+	if !h.tt.HasText("b4nk-pass") || h.tt.HasText("8642") {
+		t.Errorf("texts %q", h.tt.Texts())
 	}
 }

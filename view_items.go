@@ -307,7 +307,7 @@ func (a *app) footer(c *ui.Context, k ink) {
 		case a.mode == modeDetails && it != nil:
 			if _, f, ok := a.focusedField(); ok {
 				hint("field-copy", "Copy "+f.label)
-				if f.secret && f.kind != "totp" && !a.reveal[it.ID] {
+				if f.secret && f.kind != "totp" && !a.reveal[fieldKey(it.ID, a.fieldSel)] {
 					hint("field-reveal", "Reveal")
 				} else {
 					hint("field-reveal", "Large Type")
@@ -347,7 +347,8 @@ func (a *app) footer(c *ui.Context, k ink) {
 // into another app, and the keys go through after Right. In its own
 // window, own is true.
 func (a *app) details(c *ui.Context, k ink, it *bw.Item, own bool) {
-	reveal := a.reveal[it.ID] || c.Modifiers()&ui.Alt != 0 && !it.Reprompt
+	// Holding Option peeks at every secret field.
+	peek := c.Modifiers()&ui.Alt != 0 && !it.Reprompt
 	ui.Scroll(c.Key("detail-"+it.ID)).Fill().Padding(18, 18, 16, 18).Gap(16).Children(func() {
 		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
 			avatar(c, k, it.Name, int(it.Type), 44)
@@ -373,7 +374,8 @@ func (a *app) details(c *ui.Context, k ink, it *bw.Item, own bool) {
 			group(c.Key("fields"), k, func() {
 				for i, f := range fields {
 					focused := !own && a.mode == modeDetails && a.fieldSel == i
-					a.fieldRow(c.Key(i), k, it, f, reveal, i > 0, focused)
+					key := fieldKey(it.ID, i)
+					a.fieldRow(c.Key(i), k, it, f, key, peek || a.reveal[key], i > 0, focused)
 				}
 			})
 		}
@@ -506,10 +508,10 @@ func (a *app) fieldsOf(it *bw.Item) []field {
 	return fs
 }
 
-// fieldRow is a field of an item: its label over its value. A click
-// copies it; it drags into the fields of other apps. focused is whether
-// the keys are on it.
-func (a *app) fieldRow(c *ui.Context, k ink, it *bw.Item, f field, reveal, divider, focused bool) {
+// fieldRow is a field of an item, named key: its label over its value. A
+// click copies it; it drags into the fields of other apps. reveal shows
+// it if it is secret; focused is whether the keys are on it.
+func (a *app) fieldRow(c *ui.Context, k ink, it *bw.Item, f field, key string, reveal, divider, focused bool) {
 	if f.kind == "totp" {
 		code, left, ok := a.code(it)
 		if !ok {
@@ -578,9 +580,9 @@ func (a *app) fieldRow(c *ui.Context, k ink, it *bw.Item, f field, reveal, divid
 			}
 			iconButton(c.Key("reveal"), k, ic, label+" (hold ⌥)").OnClick(func() {
 				if reveal {
-					delete(a.reveal, it.ID)
+					delete(a.reveal, key)
 				} else {
-					a.guarded(it, func() { a.reveal[it.ID] = true })
+					a.guarded(it, func() { a.reveal[key] = true })
 				}
 				a.search.Focus()
 			})

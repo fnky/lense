@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strconv"
 	"strings"
 
 	"bitwarden-mini/internal/bw"
@@ -187,15 +188,19 @@ func (a *app) focusedField() (*bw.Item, field, bool) {
 	return it, f, true
 }
 
-// revealField shows a secret field, then shows it in Large Type; other
-// fields go to Large Type at once.
+// fieldKey names a field of an item, by its place among the item's
+// fields, to reveal it alone.
+func fieldKey(itemID string, i int) string { return itemID + "/" + strconv.Itoa(i) }
+
+// revealField shows the secret field the keys are on, and no other, then
+// shows it in Large Type; other fields go to Large Type at once.
 func (a *app) revealField() {
 	it, f, ok := a.focusedField()
 	if !ok {
 		return
 	}
-	if f.secret && f.kind != "totp" && !a.reveal[it.ID] {
-		a.guarded(it, func() { a.reveal[it.ID] = true })
+	if key := fieldKey(it.ID, a.fieldSel); f.secret && f.kind != "totp" && !a.reveal[key] {
+		a.guarded(it, func() { a.reveal[key] = true })
 		return
 	}
 	a.guarded(it, func() { a.large = &largeType{label: f.label, value: f.value, item: it.Name} })
