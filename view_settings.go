@@ -86,7 +86,8 @@ func (a *app) settingsView(c *ui.Context, k ink) {
 		})
 		section(c, k, "Filling", func() {
 			trusted := a.sys.trusted(false)
-			detail := "Return types your username and password into the app you were in, and ⌥Return into the website it opens."
+			detail := fmt.Sprintf("%s types your username and password into the browser or app you came from, and %s into the website it opens.",
+				a.cfg.keyHint("default"), a.cfg.keyHint("open-fill"))
 			settingRow(c, k, "Accessibility access", detail, func() {
 				if trusted {
 					ui.Row(c).Gap(5).AlignItems(ui.Center).Children(func() {
