@@ -87,6 +87,11 @@ shortcut that shows Bitwarden Mini included.
 | esc | Close the selector or Large Type, clear the search, then close Bitwarden Mini, forgetting the passwords revealed |
 | ⌘W | Close Bitwarden Mini |
 
+Quick Access shows one of macOS's materials behind its content: Popover,
+unless you choose Solid, Menu, HUD, Sidebar or Under Window in Settings →
+Appearance. The list and the details scroll under the footer, frosted as
+under a bar on macOS 26.
+
 Hold ⌥ to see passwords. Click a field to copy it, or drag it into a field of
 another app. Copied passwords and codes are marked concealed for clipboard
 managers, and cleared after 90 seconds unless you copied something else.
