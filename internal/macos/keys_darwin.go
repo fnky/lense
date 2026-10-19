@@ -102,7 +102,13 @@ const (
 )
 
 // PressKey presses and releases a key, without modifiers.
-func PressKey(code uint16) {
+func PressKey(code uint16) { press(code, 0) }
+
+// SelectAll presses Command-A, which selects what the focused field holds,
+// for typing over it.
+func SelectAll() { press(0, 1<<20) } // kVK_ANSI_A, kCGEventFlagMaskCommand
+
+func press(code uint16, flags uint64) {
 	if load() != nil {
 		return
 	}
@@ -115,7 +121,7 @@ func PressKey(code uint16) {
 		if ev == 0 {
 			return
 		}
-		cgEventSetFlags(ev, 0)
+		cgEventSetFlags(ev, flags)
 		cgEventPost(0, ev) // kCGHIDEventTap
 		cfRelease(ev)
 	}

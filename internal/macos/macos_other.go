@@ -22,6 +22,9 @@ func Trusted(prompt bool) bool                      { return false }
 func FocusedField() FieldKind                       { return FieldNone }
 func EnableWebAccessibility(pid int)                {}
 func PressKey(code uint16)                          {}
+func SelectAll()                                    {}
+func FloatPanel(nsWindow uintptr)                   {}
+func OwnPID() int                                   { return 0 }
 func TypeText(text string)                          {}
 func CopySecret(text string, concealed bool) int    { return -1 }
 func ClearIfUnchanged(count int) bool               { return false }

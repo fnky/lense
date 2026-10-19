@@ -2,130 +2,104 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"image/png"
-	"math"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"bitwarden-mini/internal/bw"
+	"bitwarden-mini/internal/bw/bwtest"
+	"bitwarden-mini/internal/ipc"
+	"bitwarden-mini/internal/macos"
+
 	"github.com/egoist/mygo/ui"
 )
 
-// fake is an Umami account of a few websites, with traffic that rises in
-// the day and falls at night.
-type fake struct {
-	sites  []website
-	scale  map[string]float64
-	err    error
-	calls  int
-	mu     sync.Mutex
-	keyErr bool
+// fakeDesktop is the Bitwarden app with the fixture's account, which
+// unlocks with Touch ID unless told otherwise.
+type fakeDesktop struct {
+	t         *testing.T
+	f         *bwtest.Fixture
+	path      string
+	unlockErr error
+	unlocks   int
+	notRun    bool
+	opened    int
 }
 
-func newFake() *fake {
-	return &fake{
-		sites: []website{
-			{ID: "a", Name: "Acme Docs", Domain: "docs.acme.dev"},
-			{ID: "b", Name: "Personal blog", Domain: "egoist.dev"},
-			{ID: "c", Name: "Landing page", Domain: "acme.dev"},
-			{ID: "d", Name: "Changelog", Domain: "changelog.acme.dev"},
-			{ID: "e", Name: "Status", Domain: "status.acme.dev"},
-		},
-		scale: map[string]float64{"a": 120, "b": 46, "c": 210, "d": 9, "e": 0},
+func (d *fakeDesktop) load() (*bw.Store, error) {
+	if d.path == "" {
+		return nil, bw.ErrNoData
 	}
+	return bw.Open(d.path)
 }
 
-func (f *fake) websites(context.Context) ([]website, error) {
-	f.mu.Lock()
-	f.calls++
-	f.mu.Unlock()
-	if f.keyErr {
-		return nil, &apiError{status: 401}
+func (d *fakeDesktop) unlock(ctx context.Context, userID string) (bw.SymmetricKey, error) {
+	d.unlocks++
+	if d.unlockErr != nil {
+		return bw.SymmetricKey{}, d.unlockErr
 	}
-	return f.sites, f.err
+	if userID != d.f.UserID {
+		return bw.SymmetricKey{}, ipc.ErrWrongUser
+	}
+	return bw.NewSymmetricKey(d.f.UserKey.Bytes())
 }
 
-func (f *fake) stats(_ context.Context, id string, from, to time.Time) (cur, prev stats, err error) {
-	k := f.scale[id] * to.Sub(from).Hours() / 24
-	cur = stats{Pageviews: num(k * 3.1), Visitors: num(k), Visits: num(k * 1.3), Bounces: num(k * 0.55), Totaltime: num(k * 1.3 * 94)}
-	p := k * (0.8 + 0.1*float64(len(id)+int(id[0])%4))
-	prev = stats{Pageviews: num(p * 3), Visitors: num(p), Visits: num(p * 1.25), Bounces: num(p * 0.6), Totaltime: num(p * 1.25 * 80)}
-	return cur, prev, nil
+func (d *fakeDesktop) running() bool   { return !d.notRun }
+func (d *fakeDesktop) installed() bool { return true }
+func (d *fakeDesktop) open() error     { d.opened++; return nil }
+
+// fakeSystem is macOS: it records what was copied, filled and opened.
+type fakeSystem struct {
+	mu       sync.Mutex
+	copied   []string
+	secret   []bool
+	filled   []fillRequest
+	fillErr  error
+	opened   []string
+	details  []string
+	hidden   int
+	shown    int
+	bio      bool
+	authErr  error
+	auths    int
+	trust    bool
+	pageURLs map[string]string
 }
 
-func (f *fake) active(_ context.Context, id string) (int, error) {
-	return int(f.scale[id] / 30), nil
+func (s *fakeSystem) copy(text string, secret bool) {
+	s.copied = append(s.copied, text)
+	s.secret = append(s.secret, secret)
 }
-
-func (f *fake) series(_ context.Context, id string, from, to time.Time, unit, _ string) (views, visitors []point, err error) {
-	step := 24 * time.Hour
-	if unit == "hour" {
-		step = time.Hour
-	}
-	for t, i := from, 0; !t.After(to); t, i = t.Add(step), i+1 {
-		v := f.scale[id] / 24
-		if unit == "day" {
-			v = f.scale[id] * (1 + 0.25*math.Sin(float64(i)/2.3))
-		} else {
-			v *= 1 + 0.8*math.Sin(float64(t.Hour()-9)/24*2*math.Pi)
-		}
-		v = math.Round(v)
-		if v <= 0 {
-			continue // Umami leaves out units without any
-		}
-		x := t.Format("2006-01-02 15:04:05")
-		visitors = append(visitors, point{X: x, Y: num(v)})
-		views = append(views, point{X: x, Y: num(v * 2.9)})
-	}
-	return views, visitors, nil
+func (s *fakeSystem) openURL(u string)     { s.opened = append(s.opened, u) }
+func (s *fakeSystem) biometrics() bool     { return s.bio }
+func (s *fakeSystem) trusted(bool) bool    { return s.trust }
+func (s *fakeSystem) show()                { s.shown++ }
+func (s *fakeSystem) hide()                { s.hidden++ }
+func (s *fakeSystem) openDetail(id string) { s.details = append(s.details, id) }
+func (s *fakeSystem) authenticate(string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.auths++
+	return s.authErr
 }
-
-func (f *fake) metrics(_ context.Context, id, kind string, _, _ time.Time, limit int) ([]metric, error) {
-	k := f.scale[id]
-	var rows []metric
-	switch kind {
-	case "path":
-		rows = []metric{{"/", num(k * 2)}, {"/docs/getting-started", num(k * 1.1)}, {"/pricing", num(k * 0.6)}, {"/blog/introducing-acme-2", num(k * 0.3)}, {"/about", num(k * 0.1)}}
-	case "referrer":
-		rows = []metric{{"", num(k)}, {"www.google.com", num(k * 0.7)}, {"github.com", num(k * 0.4)}, {"news.ycombinator.com", num(k * 0.2)}}
-	case "country":
-		rows = []metric{{"US", num(k * 0.9)}, {"DE", num(k * 0.4)}, {"JP", num(k * 0.3)}, {"CN", num(k * 0.2)}}
-	}
-	if k == 0 {
-		rows = nil
-	}
-	return rows[:min(limit, len(rows))], nil
+func (s *fakeSystem) fill(_ context.Context, _ macos.App, req fillRequest) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.filled = append(s.filled, req)
+	return s.fillErr
 }
+func (s *fakeSystem) pageURL(_ context.Context, b macos.App) string { return s.pageURLs[b.BundleID] }
 
-// testApp is an app on the fake account, at 15:20 on Oct 12, 2026, whose
-// work runs before refresh returns.
-func testApp(t *testing.T, f *fake) *app {
-	t.Helper()
-	cfg := config{Endpoint: cloudEndpoint, Key: "api_test"}
-	var src source
-	if f != nil {
-		src = f
+func (s *fakeSystem) last() string {
+	if len(s.copied) == 0 {
+		return ""
 	}
-	a := newApp(cfg, src)
-	if f == nil {
-		a.cfg.Key = ""
-		a.page = pageSettings
-		a.resetSettings()
-	}
-	loc := time.FixedZone("CST", 8*3600)
-	a.now = func() time.Time { return time.Date(2026, 10, 12, 15, 20, 0, 0, loc) }
-	r := &runner{}
-	a.spawn, a.post = r.spawn, r.post
-	runners[a] = r
-	return a
+	return s.copied[len(s.copied)-1]
 }
 
 // runner stands in for the main thread: work runs in goroutines, and what
@@ -135,8 +109,6 @@ type runner struct {
 	wg    sync.WaitGroup
 	queue []func()
 }
-
-var runners = map[*app]*runner{}
 
 func (r *runner) spawn(fn func()) {
 	r.wg.Add(1)
@@ -149,16 +121,49 @@ func (r *runner) post(fn func()) {
 	r.mu.Unlock()
 }
 
-// settle waits for the app's work, and what it starts, to end, then
-// draws a frame.
-func settle(a *app, tt *ui.Tester) {
-	r := runners[a]
+type harness struct {
+	t    *testing.T
+	a    *app
+	desk *fakeDesktop
+	sys  *fakeSystem
+	r    *runner
+	tt   *ui.Tester
+	f    *bwtest.Fixture
+}
+
+// newHarness is the app, its account set up, on the sample vault, at 15:20
+// on Oct 19, 2026.
+func newHarness(t *testing.T, f *bwtest.Fixture, configured bool) *harness {
+	t.Helper()
+	if f == nil {
+		f = bwtest.Sample()
+	}
+	cfg := defaultConfig()
+	if configured {
+		cfg.Email, cfg.Server = f.Email, f.Server
+	}
+	h := &harness{t: t, f: f, r: &runner{}}
+	h.desk = &fakeDesktop{t: t, f: f, path: f.Write(t)}
+	h.sys = &fakeSystem{bio: true, trust: true}
+	h.a = newApp(cfg, h.desk, h.sys)
+	h.a.version = "test"
+	h.a.now = func() time.Time { return time.Date(2026, 10, 19, 15, 20, 0, 0, time.UTC) }
+	h.a.spawn, h.a.post = h.r.spawn, h.r.post
+	h.a.reload()
+	h.settle()
+	h.tt = ui.NewTester(h.a.view, windowWidth, windowHeight)
+	h.tt.SetScale(2)
+	return h
+}
+
+// settle waits for the app's work, and what it starts, then draws.
+func (h *harness) settle() {
 	for {
-		r.wg.Wait()
-		r.mu.Lock()
-		q := r.queue
-		r.queue = nil
-		r.mu.Unlock()
+		h.r.wg.Wait()
+		h.r.mu.Lock()
+		q := h.r.queue
+		h.r.queue = nil
+		h.r.mu.Unlock()
 		if len(q) == 0 {
 			break
 		}
@@ -166,14 +171,50 @@ func settle(a *app, tt *ui.Tester) {
 			fn()
 		}
 	}
-	if tt != nil {
-		tt.Frame()
+	if h.tt != nil {
+		// Focus that moves as a frame ends asks for another, which the
+		// window draws at once.
+		h.tt.Frame()
+		h.tt.Frame()
 	}
 }
 
-// snapshot writes the tester's frame to $UMA_SNAPSHOTS, to look at.
+func (h *harness) has(texts ...string) {
+	h.t.Helper()
+	for _, s := range texts {
+		if !h.tt.HasText(s) {
+			h.t.Errorf("no %q in %q", s, h.tt.Texts())
+		}
+	}
+}
+
+func (h *harness) click(label string) {
+	h.t.Helper()
+	if err := h.tt.Click(label); err != nil {
+		h.t.Fatalf("click %q: %v in %q", label, err, h.tt.Texts())
+	}
+	h.settle()
+}
+
+func (h *harness) key(mods ui.Modifiers, k ui.Key) {
+	h.tt.Key(mods, k)
+	h.settle()
+}
+
+// unlock unlocks with the master password.
+func (h *harness) unlock() {
+	h.t.Helper()
+	h.a.password = h.f.Password
+	h.a.unlockPassword()
+	h.settle()
+	if !h.a.unlocked() {
+		h.t.Fatalf("locked: %+v", h.a.lockProb)
+	}
+}
+
+// snapshot writes the frame to $BWMINI_SNAPSHOTS, to look at.
 func snapshot(t *testing.T, tt *ui.Tester, name string) {
-	dir := os.Getenv("UMA_SNAPSHOTS")
+	dir := os.Getenv("BWMINI_SNAPSHOTS")
 	if dir == "" {
 		return
 	}
@@ -188,424 +229,437 @@ func snapshot(t *testing.T, tt *ui.Tester, name string) {
 	}
 }
 
-func newTester(a *app, dark bool) *ui.Tester {
-	tt := ui.NewTester(a.view, panelWidth, panelHeight)
-	tt.SetScale(2)
-	tt.SetDark(dark)
-	return tt
+func TestSetup(t *testing.T) {
+	h := newHarness(t, nil, false)
+	h.a.startSetup()
+	h.settle()
+	h.has("Connect to Bitwarden", "Signed in to Bitwarden", "ada@example.com")
+	snapshot(t, h.tt, "setup")
+
+	// An account the desktop app doesn't have.
+	h.a.setupEmail = "grace@example.com"
+	h.click("Continue")
+	if h.a.setupProb == nil || !strings.Contains(h.a.setupProb.title, "isn't signed in") {
+		t.Fatalf("problem %+v", h.a.setupProb)
+	}
+	h.has("grace@example.com isn't signed in to Bitwarden", "Open Bitwarden")
+	h.click("Open Bitwarden")
+	if h.desk.opened != 1 {
+		t.Error("Bitwarden didn't open")
+	}
+
+	// The right account on the wrong server.
+	h.a.setupEmail, h.a.setupRegion = "ada@example.com", 1
+	h.click("Continue")
+	h.has("Check the server region", "Use bitwarden.com")
+	snapshot(t, h.tt, "setup-region")
+	h.click("Use bitwarden.com")
+	if h.a.setupRegion != 0 {
+		t.Fatalf("region %d", h.a.setupRegion)
+	}
+	h.click("Continue")
+	if !h.a.configured() || h.a.page != pageItems || h.a.cfg.Server.Region != bw.RegionUS {
+		t.Fatalf("not set up: %+v %+v", h.a.cfg, h.a.setupProb)
+	}
+	h.has("Bitwarden Mini is locked", "ada@example.com · bitwarden.com")
 }
 
-func TestList(t *testing.T) {
-	a := testApp(t, newFake())
-	a.refresh()
-	settle(a, nil)
-	tt := newTester(a, false)
-	for _, s := range []string{"Acme Docs", "Personal blog", "Landing page", "Visitors", "Compared with the previous 24 hours"} {
-		if !tt.HasText(s) {
-			t.Errorf("no %q in %q", s, tt.Texts())
+func TestServerChangedSince(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.a.cfg.Server = bw.Server{Region: bw.RegionEU}
+	h.a.password = h.f.Password
+	h.a.unlockPassword()
+	h.settle()
+	h.has("Check the server region", "Use bitwarden.com")
+	h.click("Use bitwarden.com")
+	h.a.password = h.f.Password
+	h.a.unlockPassword()
+	h.settle()
+	if !h.a.unlocked() {
+		t.Fatalf("locked: %+v", h.a.lockProb)
+	}
+}
+
+func TestUnlockWithPassword(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.has("Bitwarden Mini is locked", "Unlock with Touch ID")
+	snapshot(t, h.tt, "locked")
+	h.a.password = "not it"
+	h.a.unlockPassword()
+	h.settle()
+	h.has("Incorrect master password")
+	snapshot(t, h.tt, "locked-wrong-password")
+	if h.a.password != "" {
+		t.Error("the wrong password stays")
+	}
+	h.unlock()
+	h.has("GitHub", "Visa", "FAVORITES", "ALL ITEMS")
+	snapshot(t, h.tt, "items")
+	h.tt.SetDark(true)
+	snapshot(t, h.tt, "items-dark")
+}
+
+func TestUnlockWithTouchID(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.a.shown() // the window shows, locked: it asks the desktop app
+	h.settle()
+	if h.desk.unlocks != 1 || !h.a.unlocked() {
+		t.Fatalf("unlocks %d, problem %+v", h.desk.unlocks, h.a.lockProb)
+	}
+
+	// Locked by the app itself, Touch ID of this Mac shows it again,
+	// without the desktop app.
+	h.a.query = "git"
+	h.a.lock(false)
+	h.settle()
+	if h.a.vault == nil {
+		t.Fatal("the vault was forgotten")
+	}
+	h.click("Unlock with Touch ID")
+	if h.sys.auths != 1 || h.desk.unlocks != 1 || !h.a.unlocked() {
+		t.Fatalf("auths %d, unlocks %d", h.sys.auths, h.desk.unlocks)
+	}
+	if h.a.query != "" {
+		t.Error("the search survived the lock")
+	}
+
+	// Locked for good, it asks the desktop app again.
+	h.a.lock(true)
+	h.settle()
+	if h.a.vault != nil {
+		t.Fatal("the vault was kept")
+	}
+	h.click("Unlock with Touch ID")
+	if h.desk.unlocks != 2 || !h.a.unlocked() {
+		t.Fatalf("unlocks %d", h.desk.unlocks)
+	}
+}
+
+func TestTouchIDProblems(t *testing.T) {
+	for _, tc := range []struct {
+		err    error
+		notRun bool
+		want   string
+	}{
+		{ipc.ErrNoSocket, true, "Bitwarden isn't open"},
+		{ipc.ErrNoSocket, false, "Turn on browser integration in Bitwarden"},
+		{statusError{ipc.StatusNotEnabledLocally}, false, "Turn on Touch ID in Bitwarden"},
+		{statusError{ipc.StatusUnlockNeeded}, false, "Unlock Bitwarden with your master password once"},
+		{ipc.ErrDenied, false, "Bitwarden didn't unlock"},
+		{ipc.ErrWrongUser, false, "ada@example.com isn't signed in to Bitwarden"},
+		{ipc.ErrNoAnswer, false, "Bitwarden didn't answer"},
+	} {
+		h := newHarness(t, nil, true)
+		h.desk.unlockErr, h.desk.notRun = tc.err, tc.notRun
+		h.click("Unlock with Touch ID")
+		if h.a.unlocked() {
+			t.Fatal("unlocked")
+		}
+		h.has(tc.want)
+		if tc.notRun {
+			snapshot(t, h.tt, "locked-not-running")
 		}
 	}
-	// The busiest website comes first.
-	if v := a.visible(); v[0].ID != "c" || v[len(v)-1].ID != "e" {
-		t.Errorf("order %v", []string{v[0].ID, v[len(v)-1].ID})
-	}
-	if got := a.liveTotal(); got != 4+1+7 {
-		t.Errorf("live %d", got)
-	}
-	snapshot(t, tt, "list")
-	tt.SetDark(true)
-	snapshot(t, tt, "list-dark")
 }
 
-func TestRange(t *testing.T) {
-	f := newFake()
-	a := testApp(t, f)
-	a.refresh()
-	settle(a, nil)
-	tt := newTester(a, false)
-	if err := tt.Click("7D"); err != nil {
-		t.Fatal(err)
+func TestSearchAndKeys(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.unlock()
+	h.tt.Type("git")
+	h.settle()
+	if it := h.a.selected(); it == nil || it.Name != "GitHub" {
+		t.Fatalf("selected %v, rows %d", it, len(h.a.rows))
 	}
-	settle(a, tt)
-	if a.cfg.Range != 1 || len(a.buckets) != 7 {
-		t.Fatalf("range %d, %d buckets", a.cfg.Range, len(a.buckets))
+	h.has("username", "ada", "password", "one-time password", "github.com/login")
+	snapshot(t, h.tt, "search")
+
+	h.key(ui.Cmd, ui.KeyC)
+	if h.sys.last() != "ada" || h.sys.secret[len(h.sys.secret)-1] {
+		t.Errorf("⌘C copied %q", h.sys.copied)
 	}
-	if !tt.HasText("Compared with the previous 7 days") {
-		t.Errorf("texts %q", tt.Texts())
+	h.key(ui.Cmd|ui.Shift, ui.KeyC)
+	if h.sys.last() != "gh-s3cret!" || !h.sys.secret[len(h.sys.secret)-1] {
+		t.Errorf("⇧⌘C copied %q", h.sys.copied)
 	}
-	tt.Key(ui.Cmd, ui.Key3)
-	settle(a, tt)
-	if a.cfg.Range != 2 || len(a.site("a").visitors) != 30 {
-		t.Errorf("range %d after Cmd+3", a.cfg.Range)
+	h.key(ui.Cmd|ui.Alt, ui.KeyC)
+	if code, _, _ := h.a.code(h.a.selected()); h.sys.last() != code || len(code) != 6 {
+		t.Errorf("⌥⌘C copied %q, code %q", h.sys.last(), code)
 	}
-	snapshot(t, tt, "list-30d")
+	h.has("Copied one-time password of GitHub · clears in 90 s")
+	if h.a.cfg.Recent[0] != h.a.selected().ID {
+		t.Errorf("recent %v", h.a.cfg.Recent)
+	}
+
+	// Return fills the app the user was in.
+	h.a.front = front{app: macos.App{PID: 42, Name: "Safari", BundleID: "com.apple.Safari"}}
+	h.key(0, ui.KeyEnter)
+	if len(h.sys.filled) != 1 || h.sys.filled[0].username != "ada" || h.sys.filled[0].password != "gh-s3cret!" || h.sys.filled[0].page != "" {
+		t.Fatalf("filled %+v", h.sys.filled)
+	}
+	// ⌥Return opens its website, and fills it.
+	h.key(ui.Alt, ui.KeyEnter)
+	if len(h.sys.filled) != 2 || h.sys.filled[1].page != "https://github.com/login" {
+		t.Fatalf("filled %+v", h.sys.filled)
+	}
+	h.key(ui.Cmd, ui.KeyO)
+	if len(h.sys.details) != 1 {
+		t.Error("⌘O opened no window")
+	}
+	h.key(ui.Cmd|ui.Shift, ui.KeyO)
+	if h.desk.opened != 1 {
+		t.Error("⇧⌘O didn't open Bitwarden")
+	}
+
+	// Escape clears the search, then hides the window.
+	hidden := h.sys.hidden
+	h.key(0, ui.KeyEscape)
+	if h.a.query != "" || h.sys.hidden != hidden {
+		t.Fatalf("query %q, hidden %d", h.a.query, h.sys.hidden-hidden)
+	}
+	h.key(0, ui.KeyEscape)
+	if h.sys.hidden != hidden+1 {
+		t.Error("escape didn't hide")
+	}
 }
 
-func TestDetail(t *testing.T) {
-	a := testApp(t, newFake())
-	a.cfg.Range = 1
-	a.refresh()
-	settle(a, nil)
-	tt := newTester(a, false)
-	if err := tt.Click("Acme Docs"); err != nil {
-		t.Fatal(err)
+func TestArrowsMoveTheChoice(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.unlock()
+	first := h.a.selected()
+	h.key(0, ui.KeyDown)
+	second := h.a.selected()
+	if first == nil || second == nil || first == second {
+		t.Fatalf("%v then %v", first, second)
 	}
-	settle(a, tt)
-	if a.page != pageSite || a.open != "a" {
-		t.Fatalf("page %v %q", a.page, a.open)
+	h.key(0, ui.KeyUp)
+	if h.a.selected() != first {
+		t.Error("up didn't come back")
 	}
-	for _, s := range []string{"Bounce rate", "Visit duration", "/docs/getting-started", "Direct", "google.com", "United States", "Open in Umami"} {
-		if !tt.HasText(s) {
-			t.Errorf("no %q in %q", s, tt.Texts())
+	h.key(0, ui.KeyUp)
+	if h.a.selected() != first {
+		t.Error("up went past the first row")
+	}
+}
+
+func TestFilters(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.unlock()
+	h.tt.Type("=ca")
+	h.settle()
+	h.has("=category:", "FILTERS")
+	snapshot(t, h.tt, "filters")
+	h.key(0, ui.KeyEnter) // finishes the filter
+	if h.a.query != "=category:" {
+		t.Fatalf("query %q", h.a.query)
+	}
+	h.tt.Type("c")
+	h.settle()
+	h.key(0, ui.KeyEnter)
+	if h.a.query != "=category:Card " {
+		t.Fatalf("query %q", h.a.query)
+	}
+	if it := h.a.selected(); it == nil || it.Name != "Visa" {
+		t.Fatalf("selected %v", it)
+	}
+	h.has("4111 1111 1111 1111"[:0]+"cardholder name", "Ada Lovelace")
+}
+
+func TestVaults(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.unlock()
+	h.a.chooseVault(h.f.OrgID)
+	h.settle()
+	for _, r := range h.a.rows {
+		if r.item != nil && r.item.OrganizationID != h.f.OrgID {
+			t.Errorf("%s of another vault", r.item.Name)
 		}
 	}
-	snapshot(t, tt, "detail")
-	// Hover the chart.
-	if r, ok := tt.Find("Visitors and views by day"); ok {
-		tt.Move(r.X+r.W*0.6, r.Y+r.H/2)
-		tt.Frame()
-		if a.selected < 0 {
-			t.Error("no bucket under the pointer")
-		}
-		snapshot(t, tt, "detail-hover")
-	}
-	tt.SetDark(true)
-	snapshot(t, tt, "detail-dark")
-	if err := tt.Click("Open in Umami"); err != nil {
-		t.Fatal(err)
-	}
-	if got := tt.OpenedURLs(); len(got) != 1 || got[0] != "https://cloud.umami.is/websites/a" {
-		t.Errorf("opened %q", got)
-	}
-	tt.Key(0, ui.KeyEscape)
-	if a.page != pageSites {
-		t.Errorf("page %v after Escape", a.page)
+	h.has("Acme Inc.", "AWS Console", "Deploy key")
+	h.a.chooseVault("personal")
+	h.settle()
+	if h.tt.HasText("AWS Console") {
+		t.Error("an organization's item in My Vault")
 	}
 }
 
-func TestOnboarding(t *testing.T) {
-	a := testApp(t, nil)
-	tt := newTester(a, false)
-	if !tt.HasText("Connect to Umami") {
-		t.Fatalf("texts %q", tt.Texts())
+func TestSuggestions(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.unlock()
+	h.sys.pageURLs = map[string]string{"com.apple.Safari": "https://github.com/pulls"}
+	h.a.setFront(macos.App{PID: 7, Name: "Safari", BundleID: "com.apple.Safari"})
+	h.settle()
+	if len(h.a.rows) < 2 || h.a.rows[0].header != "Suggestions" || h.a.rows[1].item.Name != "GitHub" {
+		t.Fatalf("rows %+v", h.a.rows[:2])
 	}
-	snapshot(t, tt, "onboarding")
+	h.has("SUGGESTIONS", "Fill in Safari")
+}
 
-	f := newFake()
-	f.keyErr = true
-	connect := func() { a.connect(func(string, string) source { return f }) }
-	a.editKey = "api_wrong"
-	connect()
-	settle(a, tt)
-	if a.configured() || !tt.HasText("The API key was rejected.") {
-		t.Fatalf("configured %v, texts %q", a.configured(), tt.Texts())
+func TestReprompt(t *testing.T) {
+	f := bwtest.Sample()
+	f.Add(bw.Item{Type: bw.TypeLogin, Name: "Bank", Reprompt: true, Login: &bw.Login{Username: "ada", Password: "b4nk"}}, false)
+	h := newHarness(t, f, true)
+	h.unlock()
+	h.tt.Type("bank")
+	h.settle()
+	h.key(ui.Cmd|ui.Shift, ui.KeyC)
+	if h.a.confirm == nil || len(h.sys.copied) != 0 {
+		t.Fatalf("copied %q without the master password", h.sys.copied)
 	}
-	snapshot(t, tt, "onboarding-error")
+	h.has("Enter your master password")
+	snapshot(t, h.tt, "reprompt")
+	h.a.confirmPw = "wrong"
+	h.a.confirmPassword()
+	h.settle()
+	h.has("Incorrect master password")
+	h.a.confirmPw = f.Password
+	h.a.confirmPassword()
+	h.settle()
+	if h.sys.last() != "b4nk" {
+		t.Fatalf("copied %q", h.sys.copied)
+	}
+	// Once is enough until it locks.
+	h.key(ui.Cmd|ui.Shift, ui.KeyC)
+	if h.a.confirm != nil || len(h.sys.copied) != 2 {
+		t.Error("asked again")
+	}
+}
 
-	f.keyErr = false
-	saved := 0
-	a.changed = func(config) { saved++ }
-	a.editKey = "api_right"
-	connect()
-	settle(a, tt)
-	if !a.configured() || a.page != pageSites || saved == 0 || len(a.sites) != 5 {
-		t.Fatalf("configured %v, page %v, saved %d", a.configured(), a.page, saved)
+func TestFillNeedsAccessibility(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.unlock()
+	h.sys.trust = false
+	h.a.front = front{app: macos.App{PID: 42, Name: "Slack"}}
+	h.tt.Type("git")
+	h.settle()
+	h.key(0, ui.KeyEnter)
+	if len(h.sys.filled) != 0 {
+		t.Fatal("filled without access")
 	}
+	h.has("Allow Bitwarden Mini to fill in other apps", "Open System Settings")
+	snapshot(t, h.tt, "fill-access")
+}
+
+func TestFillFails(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.unlock()
+	h.sys.fillErr = errNoField
+	h.a.front = front{app: macos.App{PID: 42, Name: "Slack"}}
+	h.tt.Type("git")
+	h.settle()
+	h.key(0, ui.KeyEnter)
+	if h.sys.shown != 1 || h.sys.last() != "gh-s3cret!" {
+		t.Fatalf("shown %d, copied %q", h.sys.shown, h.sys.copied)
+	}
+	h.has("Couldn't fill Slack")
+}
+
+func TestStoreChangesWhileUnlocked(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.unlock()
+	h.tt.Type("git")
+	h.settle()
+	h.f.Add(bw.Item{Type: bw.TypeLogin, Name: "GitLab", Login: &bw.Login{Username: "ada"}}, false)
+	if err := os.WriteFile(h.desk.path, h.f.JSON(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	later := time.Now().Add(time.Minute)
+	os.Chtimes(h.desk.path, later, later)
+	h.a.reload()
+	h.settle()
+	h.has("GitLab")
+	if it := h.a.selected(); it == nil || it.Name != "GitHub" {
+		t.Errorf("the choice moved to %v", it)
+	}
+}
+
+func TestNoData(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.desk.path = ""
+	h.a.reload()
+	h.settle()
+	h.click("Unlock with Touch ID")
+	h.has("Sign in to Bitwarden first")
 }
 
 func TestSettings(t *testing.T) {
-	a := testApp(t, newFake())
-	a.refresh()
-	settle(a, nil)
-	tt := newTester(a, false)
-	if err := tt.Click("Settings"); err != nil {
-		t.Fatal(err)
+	h := newHarness(t, nil, true)
+	h.unlock()
+	h.tt.SetSize(windowWidth, 1000) // all of it, unscrolled
+	h.key(ui.Cmd, ui.KeyComma)
+	h.has("Settings", "Lock when idle", "Unlock with Touch ID", "Clear copied secrets", "⇧⌘Space", "Accessibility access")
+	snapshot(t, h.tt, "settings")
+	h.click("Shortcut")
+	if !h.a.recording {
+		t.Fatal("not recording")
 	}
-	snapshot(t, tt, "settings")
-	if err := tt.Click("Show Landing page"); err != nil {
-		t.Fatal(err)
+	h.key(ui.Cmd|ui.Alt, ui.KeyK)
+	if h.a.cfg.Shortcut != "Option+Cmd+K" || h.a.recording {
+		t.Fatalf("shortcut %q", h.a.cfg.Shortcut)
 	}
-	tt.Frame()
-	if len(a.cfg.Hidden) != 1 || a.cfg.Hidden[0] != "c" {
-		t.Fatalf("hidden %q", a.cfg.Hidden)
+	h.has("⌥⌘K")
+	h.a.setShortcut = func(string) error { return errors.New("taken") }
+	h.click("Shortcut")
+	h.key(ui.Cmd, ui.KeyJ)
+	if h.a.cfg.Shortcut != "Option+Cmd+K" {
+		t.Errorf("a taken shortcut was saved")
 	}
-	if err := tt.Click("Websites"); err != nil {
-		t.Fatal(err)
-	}
-	if tt.HasText("Landing page") {
-		t.Error("a hidden website is listed")
-	}
-}
-
-func TestErrors(t *testing.T) {
-	f := newFake()
-	f.err = errors.New("Couldn't reach the server.")
-	a := testApp(t, f)
-	a.refresh()
-	settle(a, nil)
-	tt := newTester(a, false)
-	if !tt.HasText("Couldn't load your websites") {
-		t.Fatalf("texts %q", tt.Texts())
-	}
-	snapshot(t, tt, "error")
-	f.err = nil
-	if err := tt.Click("Try again"); err != nil {
-		t.Fatal(err)
-	}
-	settle(a, tt)
-	if !tt.HasText("Acme Docs") {
-		t.Errorf("texts %q after retrying", tt.Texts())
+	h.has("⌘J is taken by another app. Try another.")
+	h.key(0, ui.KeyEscape)
+	h.key(0, ui.KeyEscape)
+	if h.a.page != pageItems {
+		t.Errorf("page %v", h.a.page)
 	}
 }
 
-func TestBucketize(t *testing.T) {
-	loc := time.FixedZone("CST", 8*3600)
-	now := time.Date(2026, 10, 12, 15, 20, 0, 0, loc)
-	from, _, buckets := spans[0].window(now)
-	if len(buckets) != 24 || !from.Equal(time.Date(2026, 10, 11, 16, 0, 0, 0, loc)) {
-		t.Fatalf("from %v, %d buckets", from, len(buckets))
-	}
-	got := bucketize([]point{
-		{X: "2026-10-12 15:00:00", Y: 3},
-		{X: "2026-10-11T16:00:00+08:00", Y: 2},
-		{X: "2026-10-12T06:00:00Z", Y: 5}, // 14:00 here
-		{X: "nonsense", Y: 9},
-	}, buckets, true)
-	if got[23] != 3 || got[0] != 2 || got[22] != 5 {
-		t.Errorf("buckets %v", got)
-	}
-	_, _, days := spans[1].window(now)
-	if len(days) != 7 || days[6].Day() != 12 || days[0].Day() != 6 {
-		t.Errorf("days %v", days)
-	}
-}
-
-func TestFormat(t *testing.T) {
-	for v, want := range map[float64]string{0: "0", 999: "999", 9999: "9,999", 12_480: "12.4k", 123_456: "123k", 1_250_000: "1.2M"} {
-		if got := count(v); got != want {
-			t.Errorf("count(%v) = %q, want %q", v, got, want)
-		}
-	}
-	for d, want := range map[time.Duration]string{48 * time.Second: "48s", 125 * time.Second: "2m 05s", 72 * time.Minute: "1h 12m"} {
-		if got := duration(d); got != want {
-			t.Errorf("duration(%v) = %q, want %q", d, got, want)
-		}
-	}
-	for in, want := range map[string]string{
-		"":                               cloudEndpoint,
-		"cloud.umami.is":                 cloudEndpoint,
-		"umami.example.com":              "https://umami.example.com/api",
-		"https://umami.example.com/api/": "https://umami.example.com/api",
-		"https://api.umami.is/v1":        cloudEndpoint,
-		"http://localhost:3000":          "http://localhost:3000/api",
-	} {
-		if got := normalizeEndpoint(in); got != want {
-			t.Errorf("normalizeEndpoint(%q) = %q, want %q", in, got, want)
-		}
-	}
-	if got := dashboardURL("https://umami.example.com/api", "x"); got != "https://umami.example.com/websites/x" {
-		t.Errorf("dashboard %q", got)
-	}
-	if !strings.HasPrefix(percent(0.082), "8.2") {
-		t.Errorf("percent %q", percent(0.082))
-	}
-}
-
-func TestStatsShapes(t *testing.T) {
-	// Umami 3, with counts as strings as Postgres's bigints come.
-	var cur stats
-	if err := json.Unmarshal([]byte(`{"pageviews":"12","visitors":5,"visits":6,"bounces":3,"totaltime":600}`), &cur); err != nil || cur.Pageviews != 12 || cur.Visitors != 5 {
-		t.Errorf("v3 %+v %v", cur, err)
-	}
-	// Umami 2.
-	var old stats
-	if err := json.Unmarshal([]byte(`{"pageviews":{"value":10,"prev":8},"visitors":{"value":4,"prev":2}}`), &old); err != nil || old.Pageviews != 10 || old.Visitors != 4 {
-		t.Errorf("v2 %+v %v", old, err)
-	}
-}
-
-func TestClient(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer k" {
-			w.WriteHeader(401)
-			return
-		}
-		switch r.URL.Path {
-		case "/api/websites":
-			w.Write([]byte(`{"data":[{"id":"a","name":"A","domain":"a.dev"}],"count":1,"page":1,"pageSize":100}`))
-		case "/api/websites/a/stats":
-			if r.URL.Query().Get("startAt") == "" {
-				w.WriteHeader(400)
-				return
-			}
-			w.Write([]byte(`{"pageviews":30,"visitors":10,"visits":12,"bounces":6,"totaltime":1200,"comparison":{"pageviews":20,"visitors":8,"visits":9,"bounces":5,"totaltime":900}}`))
-		case "/api/websites/a/active":
-			w.Write([]byte(`{"visitors":3}`))
-		case "/api/websites/a/metrics":
-			if r.URL.Query().Get("type") == "path" {
-				w.WriteHeader(400) // Umami 2
-				return
-			}
-			w.Write([]byte(`[{"x":"/","y":5}]`))
-		}
-	}))
-	defer srv.Close()
-	ctx := context.Background()
-	cl := newClient(srv.URL+"/api/", "k")
-	list, err := cl.websites(ctx)
-	if err != nil || len(list) != 1 || list[0].Domain != "a.dev" {
-		t.Fatalf("websites %v %v", list, err)
-	}
-	cur, prev, err := cl.stats(ctx, "a", time.Now().Add(-time.Hour), time.Now())
-	if err != nil || cur.Visitors != 10 || prev.Visitors != 8 || cur.visitDuration() != 100*time.Second {
-		t.Errorf("stats %+v %+v %v", cur, prev, err)
-	}
-	if n, err := cl.active(ctx, "a"); n != 3 || err != nil {
-		t.Errorf("active %d %v", n, err)
-	}
-	if m, err := cl.metrics(ctx, "a", "path", time.Now(), time.Now(), 5); len(m) != 1 || err != nil {
-		t.Errorf("metrics %v %v", m, err)
-	}
-	_, err = newClient(srv.URL+"/api", "wrong").websites(ctx)
-	if err == nil || err.Error() != "The API key was rejected." {
-		t.Errorf("wrong key: %v", err)
-	}
-}
-
-// drag drags from one element's middle onto another, as a user would.
-func drag(t *testing.T, tt *ui.Tester, from, to string, below bool) {
-	t.Helper()
-	a, ok := tt.Find(from)
-	b, ok2 := tt.Find(to)
-	if !ok || !ok2 {
-		t.Fatalf("no %q or %q in %q", from, to, tt.Texts())
-	}
-	x, y := a.X+a.W/2, a.Y+a.H/2
-	// Into the top or the bottom quarter of the target.
-	ty := b.Y + b.H*0.25
-	if below {
-		ty = b.Y + b.H*0.75
-	}
-	tt.Press(x, y)
-	for i := 1; i <= 8; i++ {
-		tt.Move(x, y+(ty-y)*float32(i)/8)
-	}
-	tt.Release(x, ty)
-	tt.Frame()
-}
-
-func names(sites []*site) []string {
-	var out []string
-	for _, s := range sites {
-		out = append(out, s.Name)
-	}
-	return out
-}
-
-func TestReorderList(t *testing.T) {
-	a := testApp(t, newFake())
-	saved := 0
-	a.changed = func(config) { saved++ }
-	a.refresh()
-	settle(a, nil)
-	tt := newTester(a, false)
-	// By visitors: Landing page, Acme Docs, Personal blog, Changelog, Status.
-	drag(t, tt, "Changelog", "Landing page", false)
-	got := names(a.visible())
-	want := []string{"Changelog", "Landing page", "Acme Docs", "Personal blog", "Status"}
-	if !slices.Equal(got, want) || !a.cfg.CustomOrder || saved == 0 {
-		t.Fatalf("order %q, custom %v, saved %d", got, a.cfg.CustomOrder, saved)
-	}
-	if a.page != pageSites {
-		t.Errorf("a drag opened a website")
-	}
-	// The order stays as the numbers change.
-	a.setRange(1)
-	settle(a, tt)
-	if got := names(a.visible()); !slices.Equal(got, want) {
-		t.Errorf("order %q after another range", got)
-	}
-	if !tt.HasText("in your order") {
-		t.Errorf("texts %q", tt.Texts())
-	}
-	snapshot(t, tt, "list-custom")
-	// A click still opens a website.
-	if err := tt.Click("Acme Docs"); err != nil {
-		t.Fatal(err)
-	}
-	if a.page != pageSite || a.open != "a" {
-		t.Errorf("page %v %q after a click", a.page, a.open)
-	}
-	a.back()
-	tt.Frame()
-	// The menu goes back to the most visitors first, and keeps the order.
-	if err := tt.Click("Order"); err != nil {
-		t.Fatal(err)
-	}
-	if err := tt.ChooseMenuItem("Most Visitors First"); err != nil {
-		t.Fatalf("%v: menu %q", err, tt.Menu())
-	}
-	tt.Frame()
-	if a.cfg.CustomOrder || a.visible()[0].Name != "Landing page" || len(a.cfg.Order) != 5 {
-		t.Errorf("custom %v, order %q", a.cfg.CustomOrder, names(a.visible()))
-	}
-}
-
-func TestReorderSettings(t *testing.T) {
-	a := testApp(t, newFake())
-	a.cfg.Hidden = []string{"a"} // Acme Docs
-	a.refresh()
-	settle(a, nil)
-	a.page = pageSettings
-	tt := newTester(a, false)
-	tt.SetSize(panelWidth, 900)
-	if !tt.HasText("Acme Docs") {
-		t.Fatalf("hidden sites aren't in the settings: %q", tt.Texts())
-	}
-	snapshot(t, tt, "settings-order")
-	drag(t, tt, "Landing page", "status.acme.dev", true)
-	if got := names(a.ordered()); got[len(got)-1] != "Landing page" || !a.cfg.CustomOrder {
-		t.Fatalf("order %q", got)
-	}
-	// Moving shown sites in the list leaves the hidden one in its place.
-	before := slices.Index(ids(a.ordered()), "a")
-	a.reorderVisible([]int{0}, 2)
-	if after := slices.Index(ids(a.ordered()), "a"); after != before {
-		t.Errorf("the hidden site moved from %d to %d", before, after)
-	}
-	// Back to the most visitors first, from the segmented control.
-	if err := tt.Click("Most visitors first"); err != nil {
-		t.Fatal(err)
-	}
-	tt.Frame()
-	if a.cfg.CustomOrder {
-		t.Error("still in the user's order")
-	}
-}
-
-func TestMoveRows(t *testing.T) {
-	in := []string{"a", "b", "c", "d", "e"}
+func TestShortcuts(t *testing.T) {
 	for _, tc := range []struct {
-		rows []int
-		to   int
+		mods ui.Modifiers
+		key  ui.Key
 		want string
+		ok   bool
 	}{
-		{[]int{3}, 0, "dabce"},
-		{[]int{0}, 5, "bcdea"},
-		{[]int{0}, 2, "bacde"},
-		{[]int{1, 3}, 5, "acebd"},
-		{[]int{4}, 1, "aebcd"},
+		{ui.Super | ui.Shift, ui.KeySpace, "Shift+Cmd+Space", true},
+		{ui.Ctrl | ui.Alt, ui.KeyP, "Ctrl+Option+P", true},
+		{0, ui.KeyF5, "F5", true},
+		{0, ui.KeyF11, "F11", true},
+		{ui.Shift, ui.KeyA, "", false},
+		{0, ui.KeyA, "", false},
 	} {
-		if got := strings.Join(moveRows(in, tc.rows, tc.to), ""); got != tc.want {
-			t.Errorf("moveRows(%v, %d) = %s, want %s", tc.rows, tc.to, got, tc.want)
+		got, ok := accelerator(tc.mods, tc.key)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("%v %v: %q %v", tc.mods, tc.key, got, ok)
 		}
 	}
-	// A website the order doesn't know yet comes after it.
-	a := testApp(t, newFake())
-	a.refresh()
-	settle(a, nil)
-	a.cfg.Order, a.cfg.CustomOrder = []string{"e", "d"}, true
-	if got := names(a.ordered()); got[0] != "Status" || got[1] != "Changelog" || got[2] != "Acme Docs" {
-		t.Errorf("order %q", got)
+	if s := keySymbols("Cmd+Shift+Space"); s != "⇧⌘Space" {
+		t.Errorf("symbols %q", s)
+	}
+	if s := keySymbols("Ctrl+Option+Return"); s != "⌃⌥↩" {
+		t.Errorf("symbols %q", s)
+	}
+}
+
+func TestPlacement(t *testing.T) {
+	var p placements
+	laptop := rect{0, 25, 1512, 920}
+	wide := rect{1512, 0, 2560, 1415}
+	x, y := p.place(1, laptop, windowWidth, windowHeight)
+	if x != (1512-windowWidth)/2 || y != 25+(920-windowHeight)/5 {
+		t.Fatalf("first %d,%d", x, y)
+	}
+	// Moved on the laptop's display, it comes back there.
+	p.remember(1, laptop, rect{100, 200, windowWidth, windowHeight})
+	if x, y := p.place(1, laptop, windowWidth, windowHeight); x != 100 || y != 200 {
+		t.Fatalf("laptop %d,%d", x, y)
+	}
+	// On another display, it takes the same place relative to the middle.
+	x, y = p.place(2, wide, windowWidth, windowHeight)
+	if x != 1512+2560/2+(100+windowWidth/2-1512/2)-windowWidth/2 || y != 175 {
+		t.Fatalf("wide %d,%d", x, y)
+	}
+	// It stays on displays too small for that.
+	small := rect{0, 0, 800, 500}
+	x, y = p.place(3, small, windowWidth, windowHeight)
+	if x < 0 || x+windowWidth > 800 || y < 0 || y+windowHeight > 500 {
+		t.Fatalf("small %d,%d", x, y)
 	}
 }

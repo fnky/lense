@@ -147,3 +147,36 @@ func BrowserURL(ctx context.Context, bundleID string) (string, error) {
 	}
 	return strings.TrimSpace(string(out)), nil
 }
+
+// FloatPanel makes a window float as Spotlight's does: above the windows
+// of other apps, on the Space the user is in, full screen apps' included,
+// and out of the window cycle. Call it on the main thread.
+func FloatPanel(nsWindow uintptr) {
+	if load() != nil || nsWindow == 0 {
+		return
+	}
+	const (
+		moveToActiveSpace   = 1 << 1
+		ignoresCycle        = 1 << 6
+		fullScreenAuxiliary = 1 << 8
+		floatingLevel       = 3
+	)
+	withPool(func() {
+		w := objc.ID(nsWindow)
+		w.Send(sel("setCollectionBehavior:"), uint(moveToActiveSpace|ignoresCycle|fullScreenAuxiliary))
+		w.Send(sel("setLevel:"), floatingLevel)
+		w.Send(sel("setHidesOnDeactivate:"), false)
+	})
+}
+
+// OwnPID is this app's process.
+func OwnPID() int {
+	if load() != nil {
+		return 0
+	}
+	pid := 0
+	withPool(func() {
+		pid = int(objc.Send[int32](class("NSProcessInfo").Send(sel("processInfo")), sel("processIdentifier")))
+	})
+	return pid
+}
