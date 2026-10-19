@@ -1,12 +1,28 @@
-# Uma
+# Bitwarden Mini
 
-A menu bar app that shows the websites of an [Umami](https://umami.is) account
-and their visitors, built with [MyGo](https://github.com/egoist/mygo).
+A companion to the [Bitwarden](https://bitwarden.com) desktop app in the macOS
+menu bar, in the manner of 1Password's Quick Access: a shortcut opens it from
+any app to search the vault, copy from it, fill logins into other apps, and
+drag usernames and passwords into their fields. Built with
+[MyGo](https://github.com/egoist/mygo).
+
+Bitwarden Mini makes no requests to Bitwarden's servers. It reads the vault
+the desktop app keeps on the Mac (`data.json`, which holds it encrypted), and
+decrypts it with:
+
+- **Touch ID, through the desktop app.** Mini asks Bitwarden over its local
+  socket, as Bitwarden's browser extensions do. Bitwarden shows its Touch ID
+  prompt and hands back the account's key.
+- **Touch ID of this Mac,** after Mini locked itself, until it quits.
+- **The master password,** which derives the key offline (PBKDF2 or
+  Argon2id, as the account uses).
 
 ## Requirements
 
-- Go 1.27 or newer
-- macOS, Windows, or Linux (a desktop session is needed to run the app)
+- macOS 14 or newer, with the Bitwarden desktop app signed in to your account
+- For Touch ID: in Bitwarden's Settings, turn on **Unlock with Touch ID** and
+  **Allow browser integration**
+- Go 1.27 or newer, to build it
 
 ## Run locally
 
@@ -14,38 +30,65 @@ and their visitors, built with [MyGo](https://github.com/egoist/mygo).
 go tool mygo dev
 ```
 
-This builds a development bundle, launches it, and rebuilds and relaunches it
-whenever the Go code, `mygo.json` or the icon changes. Press `q` in the
-terminal to quit.
-
-Check that the environment is ready first, if you like:
-
-```sh
-go tool mygo doctor
-```
-
-## Build a production app
+This builds a development bundle, launches it, and rebuilds it as the code
+changes. Build the app and a disk image with:
 
 ```sh
 go tool mygo build
 ```
 
-The result goes to `build/<platform>/` — a signed `.app` and a `.dmg` on
-macOS, an executable elsewhere. Build for another platform with `-platform`,
-for example:
+The result is in `build/darwin-arm64/`. Before you distribute it, replace
+the placeholder bundle identifier in `mygo.json`.
 
-```sh
-go tool mygo build -platform darwin/universal,linux/amd64,windows/amd64
-```
+## Use it
 
-## Configure the app
+On first launch, enter the email of your Bitwarden account and choose its
+server: bitwarden.com, bitwarden.eu, or the address of your own. Mini checks
+both against the accounts signed in to the desktop app, and says how to fix a
+mismatch, such as an account that lives on the other region.
 
-On first launch, open the panel from the menu bar icon and set:
+| Keys | |
+|---|---|
+| ⇧⌘Space | Open Bitwarden Mini from any app, on the display the pointer is on, as you left it (change it in Settings) |
+| ↑ ↓ | Choose an item |
+| ↩ | Fill the login into the app you were in; finish the filter chosen |
+| ⌥↩ | Open the login's website in the browser, and fill it |
+| ⌘C | Copy the username (a card's number, an identity's email, a note) |
+| ⇧⌘C | Copy the password (a card's security code, a key's private half) |
+| ⌥⌘C | Copy the one-time password |
+| ⌘O | Open the item in a window of its own |
+| ⇧⌘O | Open Bitwarden |
+| ⌘L | Lock |
+| ⌘, | Settings |
+| esc | Clear the search, or close the window |
 
-- **API endpoint** — defaults to Umami Cloud, `https://api.umami.is/v1`. For a
-  self-hosted server, give its address, e.g. `https://analytics.example.com/api`
-  (`/api` is added for you if you leave it off)
-- **API key** — an Umami API key, from *Settings → API keys*
+Hold ⌥ to see passwords. Click a field to copy it, or drag it into a field of
+another app. Copied passwords and codes are marked concealed for clipboard
+managers, and cleared after 90 seconds unless you copied something else.
 
-On macOS the key is kept in the login keychain; elsewhere it is stored in the
-app's user data directory.
+### Search filters
+
+| Filter | Finds |
+|---|---|
+| `=favorite` | favorites |
+| `=tag:Work` | items in the folder or collection Work |
+| `=untagged` | items in no folder or collection |
+| `=category:card` | logins, cards, notes, identities or SSH keys |
+| `=vault:"My Vault"` | items of a vault: My Vault or an organization's |
+| `=passkey` | logins with a passkey |
+| `=location:github.com` | logins for a website |
+
+Filters combine with words and with each other, and complete as you type `=`.
+
+### Permissions
+
+- **Accessibility**, to fill other apps: Mini types into the field with the
+  keyboard focus, and only into text fields.
+- **Automation** of your browser, to read the page it shows, for suggestions.
+  Safari and Chromium browsers tell it; Firefox doesn't.
+
+## Limits
+
+- Items are added and changed in Bitwarden: its desktop app offers no local way
+  to save them, and Mini doesn't go to Bitwarden's servers itself.
+- Accounts using Bitwarden's newer encryption (COSE, "V2") can't be read yet.
