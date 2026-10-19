@@ -106,7 +106,7 @@ func vaultIcon(id string) *ui.SVG {
 func (a *app) vaultMenu(c *ui.Context, k ink) {
 	// A press beside it puts it away.
 	ui.Box(c.Key("vault-backdrop")).Absolute().Top(0).Left(0).Right(0).Bottom(0).OnClick(func() {
-		a.mode = modeResults
+		a.setMode(modeResults)
 		a.search.Focus()
 	})
 	panel := ui.Column(c.Key("vault-menu")).Absolute().Top(52).Right(46).Width(300).MaxHeight(windowHeight-100).
@@ -137,7 +137,7 @@ func (a *app) vaultRow(c *ui.Context, k ink, v vaultChoice) {
 	}
 	row.OnClick(func() {
 		a.chooseVault(v.id)
-		a.mode = modeResults
+		a.setMode(modeResults)
 		a.search.Focus()
 	})
 	row.Children(func() {
@@ -212,7 +212,7 @@ func (a *app) rowView(c *ui.Context, k ink, i int) {
 	}
 	if b.Pressed() || b.Clicked() {
 		if i != a.sel {
-			a.mode = modeResults
+			a.setMode(modeResults)
 		}
 		a.choose(i)
 	}

@@ -36,7 +36,7 @@ func (a *app) press(mods ui.Modifiers, key ui.Key) bool {
 	if id == "" {
 		// Typing goes back to the search, from the fields or the vaults.
 		if a.mode != modeResults && mods&(ui.Super|ui.Ctrl) == 0 && types(key) {
-			a.mode = modeResults
+			a.setMode(modeResults)
 		}
 		return false
 	}
@@ -76,7 +76,7 @@ func (a *app) run(id string) bool {
 	case "field-reveal":
 		a.revealField()
 	case "field-back":
-		a.mode = modeResults
+		a.setMode(modeResults)
 	case "field-copy":
 		if it, f, ok := a.focusedField(); ok {
 			a.copyField(it, f)
@@ -91,7 +91,7 @@ func (a *app) run(id string) bool {
 		a.collapseVault()
 	case "vault-choose":
 		a.chooseVault(a.vaultCursor)
-		a.mode = modeResults
+		a.setMode(modeResults)
 	case "copy-username":
 		a.copyPrimary()
 	case "copy-password":
@@ -107,7 +107,7 @@ func (a *app) run(id string) bool {
 	case "choose-vault":
 		a.openVaults()
 	case "search":
-		a.mode = modeResults
+		a.setMode(modeResults)
 		a.search.Focus()
 	case "lock":
 		a.lock(false)
@@ -142,6 +142,16 @@ func (a *app) close() {
 }
 
 // --- The fields of the item chosen ---
+
+// setMode moves the keys to another mode. Leaving the fields of an item
+// conceals the passwords revealed there, and puts Large Type away.
+func (a *app) setMode(m mode) {
+	if a.mode == modeDetails && m != modeDetails {
+		a.reveal = map[string]bool{}
+		a.large = nil
+	}
+	a.mode = m
+}
 
 func (a *app) enterDetails() {
 	it := a.selected()
@@ -258,10 +268,11 @@ func (a *app) visibleVaults() []vaultChoice {
 
 func (a *app) openVaults() {
 	if a.mode == modeVaults {
-		a.mode = modeResults
+		a.setMode(modeResults)
 		return
 	}
-	a.mode, a.vaultCursor = modeVaults, a.cfg.Vault
+	a.setMode(modeVaults)
+	a.vaultCursor = a.cfg.Vault
 	if a.vaultOpen == nil {
 		a.vaultOpen = map[string]bool{}
 	}
@@ -309,7 +320,7 @@ func (a *app) collapseVault() {
 	case v.parent != "":
 		a.vaultCursor = v.parent
 	default:
-		a.mode = modeResults
+		a.setMode(modeResults)
 	}
 }
 
@@ -318,7 +329,7 @@ func (a *app) jumpVault(n int) {
 	for _, v := range a.vaultTree() {
 		if v.num == n {
 			a.chooseVault(v.id)
-			a.mode = modeResults
+			a.setMode(modeResults)
 			return
 		}
 	}

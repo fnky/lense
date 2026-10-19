@@ -901,7 +901,8 @@ func (a *app) selected() *bw.Item {
 // queryChanged searches anew: what is typed goes back to the results,
 // from the fields or the vaults.
 func (a *app) queryChanged() {
-	a.prob, a.mode = nil, modeResults
+	a.prob = nil
+	a.setMode(modeResults)
 	a.rebuild(false)
 }
 
@@ -916,7 +917,7 @@ func (a *app) escape() {
 	case a.prob != nil:
 		a.prob = nil
 	case a.mode == modeVaults:
-		a.mode = modeResults
+		a.setMode(modeResults)
 	case a.page == pageSettings && a.recordID != "":
 		a.recordID = ""
 	case a.page == pageSettings && a.configured():
@@ -924,7 +925,8 @@ func (a *app) escape() {
 	case a.page == pageSetup && a.configured():
 		a.page = pageSettings
 	case a.query != "" && a.unlocked():
-		a.query, a.mode = "", modeResults
+		a.query = ""
+		a.setMode(modeResults)
 		a.rebuild(false)
 	default:
 		a.close()

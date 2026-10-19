@@ -868,3 +868,38 @@ func TestVaultSelector(t *testing.T) {
 		t.Errorf("numbers %v", nums)
 	}
 }
+
+func TestLeavingTheFieldsConcealsPasswords(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.unlock()
+	h.tt.Type("git")
+	h.settle()
+	reveal := func() {
+		t.Helper()
+		h.key(0, ui.KeyRight)
+		h.key(0, ui.KeyDown)
+		h.key(0, ui.KeyRight)
+		if !h.a.reveal[h.a.selected().ID] {
+			t.Fatal("not revealed")
+		}
+		h.has("gh-s3cret!")
+	}
+	for _, leave := range []struct {
+		how string
+		do  func()
+	}{
+		{"Left", func() { h.key(0, ui.KeyLeft) }},
+		{"typing", func() { h.tt.Type("h"); h.settle() }},
+		{"Cmd-F", func() { h.key(ui.Cmd, ui.KeyF) }},
+		{"the vault selector", func() { h.key(ui.Cmd, ui.KeyK); h.key(0, ui.KeyEscape) }},
+	} {
+		h.a.query, h.a.caretEnd = "git", true
+		h.a.queryChanged()
+		h.settle()
+		reveal()
+		leave.do()
+		if h.a.mode == modeDetails || len(h.a.reveal) != 0 || h.tt.HasText("gh-s3cret!") {
+			t.Errorf("after %s: mode %v, reveal %v", leave.how, h.a.mode, h.a.reveal)
+		}
+	}
+}
