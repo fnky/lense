@@ -30,7 +30,7 @@ func BarMaterial(nsWindow uintptr, height, radius float64, material int) uintptr
 		v = objc.ID(class("NSVisualEffectView")).Send(sel("alloc")).Send(sel("initWithFrame:"), nsRect{W: b.W, H: height})
 		v.Send(sel("setBlendingMode:"), 1) // NSVisualEffectBlendingModeWithinWindow
 		v.Send(sel("setMaterial:"), material)
-		v.Send(sel("setState:"), 1) // active, as the panel never is key's window's
+		v.Send(sel("setState:"), 1)               // active, as the panel never is key's window's
 		v.Send(sel("setAutoresizingMask:"), 2|32) // width sizable, top margin flexible
 		v.Send(sel("setWantsLayer:"), true)
 		layer := v.Send(sel("layer"))
