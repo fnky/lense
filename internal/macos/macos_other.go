@@ -33,6 +33,7 @@ func ScrollPhase() (phase, momentum Phase)           { return 0, 0 }
 func BarMaterial(nsWindow uintptr, height, radius float64, material int) uintptr {
 	return 0
 }
+func ShowBar(view uintptr, show bool) {}
 func BrowserURL(ctx context.Context, bundleID string) (string, error) {
 	return "", errors.ErrUnsupported
 }

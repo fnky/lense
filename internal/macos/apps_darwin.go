@@ -176,7 +176,8 @@ func RoundMaterial(nsWindow uintptr, radius float64) {
 			if v == 0 || depth > 3 {
 				return 0
 			}
-			if objc.Send[bool](v, sel("isKindOfClass:"), effect) {
+			// The window's, behind its content, not a bar's (BarMaterial).
+			if objc.Send[bool](v, sel("isKindOfClass:"), effect) && objc.Send[int](v, sel("blendingMode")) == 0 {
 				return v
 			}
 			subs := v.Send(sel("subviews"))

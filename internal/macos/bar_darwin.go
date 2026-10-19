@@ -16,8 +16,9 @@ const (
 // content, height points tall: the content under it blurs and tints as
 // under a bar of a window of macOS's own, blended within the window, and
 // its bottom corners round by radius as the window's. It returns the view,
-// which ShowBar shows and hides; an existing one is reused. Call it on the
-// main thread.
+// which ShowBar shows and hides. What the bar shows draws above it, in a
+// window of its own: the material frosts the window's content. Call it on
+// the main thread.
 func BarMaterial(nsWindow uintptr, height, radius float64, material int) uintptr {
 	if load() != nil || nsWindow == 0 {
 		return 0
@@ -41,6 +42,15 @@ func BarMaterial(nsWindow uintptr, height, radius float64, material int) uintptr
 		content.Send(sel("addSubview:positioned:relativeTo:"), v, 1, 0) // NSWindowAbove
 	})
 	return uintptr(v)
+}
+
+// ShowBar shows or hides a material of BarMaterial. Call it on the main
+// thread.
+func ShowBar(view uintptr, show bool) {
+	if load() != nil || view == 0 {
+		return
+	}
+	objc.ID(view).Send(sel("setHidden:"), !show)
 }
 
 type nsRect struct{ X, Y, W, H float64 }

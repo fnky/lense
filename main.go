@@ -38,6 +38,11 @@ type shell struct {
 	details  map[string]*mygo.Window
 	ownPID   int
 	quitting bool
+	// bar is AppKit's material over the bottom of win, which frosts what
+	// scrolls under the footer, and footer the window over it that shows
+	// the footer (footerView), as the action bar of Raycast shows.
+	bar    uintptr
+	footer *mygo.Window
 
 	saving   sync.Mutex
 	shortcut string // registered
@@ -101,6 +106,12 @@ func (s *shell) ready() {
 	a.applyMaterial = func() {
 		if s.win != nil {
 			s.applyMaterial(s.win)
+		}
+	}
+	a.showBar = func(show bool) { mygo.RunOnMain(func() { s.showBar(show) }) }
+	a.redrawBar = func() {
+		if s.footer != nil {
+			s.footer.Invalidate()
 		}
 	}
 	s.content = ui.View(a.view)
@@ -226,6 +237,7 @@ func (s *shell) show() {
 	})
 	w.SetPosition(x, y)
 	s.applyMaterial(w)
+	s.addBar(w)
 	w.OnClose(func(e *mygo.CloseEvent) {
 		// Like Spotlight, it goes as the user goes elsewhere, but not to
 		// the prompts of Touch ID.
@@ -238,6 +250,8 @@ func (s *shell) show() {
 	w.OnClosed(func() {
 		if s.win == w {
 			s.win = nil
+			// The footer's window closes with it.
+			s.bar, s.footer, a.nativeBar = 0, nil, false
 			a.recordID = ""
 			s.moving.active = false
 			s.hideGuides()
@@ -250,6 +264,41 @@ func (s *shell) show() {
 	}
 	a.shown()
 	s.redraw()
+}
+
+// addBar lays AppKit's material over the bottom of w, and the window that
+// shows the footer over it, which follows w and closes with it: a window
+// of its own, as the material frosts what w draws under it. The view shows
+// them as it shows the footer (app.syncBar).
+func (s *shell) addBar(w *mygo.Window) {
+	s.bar = macos.BarMaterial(w.NativeHandle(), footerHeight, radius, macos.MaterialHeaderView)
+	if s.bar == 0 {
+		return // the footer draws in w
+	}
+	macos.ShowBar(s.bar, false)
+	s.footer = mygo.NewFlyout(mygo.FlyoutOptions{
+		Parent:  w,
+		Anchor:  mygo.Rectangle{Y: windowHeight - footerHeight, Width: windowWidth},
+		Width:   windowWidth,
+		Height:  footerHeight,
+		Hidden:  true,
+		Content: ui.View(s.a.footerView),
+		Page:    mygo.PageOptions{DevTools: mygo.DevToolsDisabled},
+	})
+	s.a.nativeBar, s.a.barShown = true, false
+}
+
+// showBar shows the footer over AppKit's material, or hides both.
+func (s *shell) showBar(show bool) {
+	if s.bar == 0 || s.footer == nil {
+		return
+	}
+	macos.ShowBar(s.bar, show)
+	if show {
+		s.footer.Show()
+	} else {
+		s.footer.Hide()
+	}
 }
 
 // applyMaterial shows the material chosen behind the window's content, its

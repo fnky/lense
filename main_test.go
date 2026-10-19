@@ -1092,3 +1092,38 @@ func TestRowsFadeUnderThePinnedHeader(t *testing.T) {
 	}
 	clear()
 }
+
+func TestFooterOverAppKitsMaterial(t *testing.T) {
+	h := newHarness(t, nil, true)
+	var shown []bool
+	redraws := 0
+	h.a.nativeBar = true
+	h.a.showBar = func(show bool) { shown = append(shown, show) }
+	h.a.redrawBar = func() { redraws++ }
+	h.settle()
+	if len(shown) != 0 {
+		t.Fatalf("the footer shows over the lock: %v", shown)
+	}
+	h.unlock()
+	if !slices.Equal(shown, []bool{true}) || redraws == 0 {
+		t.Fatalf("unlocked: shown %v, drawn %d times", shown, redraws)
+	}
+	// The window draws no footer: the footer's own window does.
+	if _, ok := h.tt.Find("Open in Bitwarden"); ok {
+		t.Fatal("the window draws the footer under the material")
+	}
+	ft := ui.NewTester(h.a.footerView, windowWidth, footerHeight)
+	if _, ok := ft.Find("Open in Bitwarden"); !ok {
+		t.Fatal("the footer's window shows no footer")
+	}
+	if _, ok := ft.Find("Fields"); !ok {
+		t.Fatal("the footer's window shows no keys")
+	}
+	h.a.page = pageSettings
+	h.settle()
+	h.a.page = pageItems
+	h.settle()
+	if !slices.Equal(shown, []bool{true, false, true}) {
+		t.Fatalf("over the settings and back: %v", shown)
+	}
+}

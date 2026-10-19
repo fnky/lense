@@ -125,6 +125,22 @@ func (a *app) view(c *ui.Context) {
 			a.itemsView(c, k)
 		}
 	})
+	a.syncBar()
+}
+
+// syncBar has the shell show the footer over AppKit's material as Quick
+// Access shows it, as it shows now, or hide it.
+func (a *app) syncBar() {
+	if !a.nativeBar {
+		return
+	}
+	if on := a.footerShows(); on != a.barShown {
+		a.barShown = on
+		a.showBar(on)
+	}
+	if a.barShown {
+		a.redrawBar()
+	}
 }
 
 // windowKeys gives the window the keys of the actions where it is. The

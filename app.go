@@ -194,6 +194,14 @@ type app struct {
 	confirmErr  string
 	confirmH    ui.Handle
 
+	// nativeBar is whether the shell shows the footer in a window of its
+	// own (footerView), over AppKit's material: showBar shows or hides
+	// both, and redrawBar draws the footer again, as the window draws.
+	// barShown is whether they show.
+	nativeBar, barShown bool
+	showBar             func(show bool)
+	redrawBar           func()
+
 	// The rubber bands of the scroll views: the items', which listOff
 	// moves the rows by in this frame, the details', of the details in
 	// windows of their own by item, the settings' and the vaults'.

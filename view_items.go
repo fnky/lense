@@ -357,13 +357,13 @@ func (a *app) noItem(c *ui.Context, k ink) {
 	})
 }
 
-// footer shows what the keys do where they act, or the message of what
-// just happened.
+// footer is the bar at the bottom of Quick Access, which the list and the
+// details scroll under. Where AppKit's material frosts what is under it,
+// as under Raycast's action bar (nativeBar), the shell shows the bar in a
+// window of its own over the material (footerView); else it draws here.
 func (a *app) footer(c *ui.Context, k ink) {
-	hint := func(id, label string) {
-		if h := a.cfg.keyHint(id); h != "" {
-			keycap(c, k, h, label)
-		}
+	if a.nativeBar {
+		return
 	}
 	// What scrolls under the footer frosts, as content under a bar does on
 	// macOS 26. Over the window's material, what is under it is mostly
@@ -375,11 +375,40 @@ func (a *app) footer(c *ui.Context, k ink) {
 	} else {
 		edge.Height(footerHeight).Material(glass.ScrollEdge{Hard: true, Bottom: true, Background: k.chrome})
 	}
-	bar := ui.Row(c.Key("footer")).Absolute().Left(0).Right(0).Bottom(0).Height(footerHeight).
-		Padding(0, 14).Gap(14).AlignItems(ui.Center).Clip()
+	bar := ui.Row(c.Key("footer")).Absolute().Left(0).Right(0).Bottom(0).Height(footerHeight)
 	if k.vibrant {
 		bar.Background(k.chrome).BorderWidth(1, 0, 0, 0).BorderColor(k.line)
 	}
+	a.footerBar(c, k, bar)
+}
+
+// footerView is the footer in the window of its own the shell shows it in,
+// over AppKit's material, which it draws nothing over but a hairline.
+func (a *app) footerView(c *ui.Context) {
+	c.SetTheme(theme(c.Theme()))
+	k := inkOf(c.Theme())
+	c.Root().Background(ui.Transparent).FontSize(13).TextColor(k.text)
+	if !a.footerShows() {
+		return
+	}
+	a.footerBar(c, k, ui.Row(c.Key("footer")).Fill().BorderWidth(1, 0, 0, 0).BorderColor(k.line))
+}
+
+// footerShows reports whether Quick Access shows its footer: over its
+// items, without Large Type or the master password asked for over them.
+func (a *app) footerShows() bool {
+	return a.configured() && a.page == pageItems && a.unlocked() && a.large == nil && a.confirm == nil
+}
+
+// footerBar fills bar with what the keys do where they act, or the message
+// of what just happened.
+func (a *app) footerBar(c *ui.Context, k ink, bar ui.Element) {
+	hint := func(id, label string) {
+		if h := a.cfg.keyHint(id); h != "" {
+			keycap(c, k, h, label)
+		}
+	}
+	bar.Padding(0, 14).Gap(14).AlignItems(ui.Center).Clip()
 	a.dragHandle(bar).Children(func() {
 		if a.flashing(c) {
 			ui.Icon(c, iconCheck).FontSize(13).TextColor(k.okay)
