@@ -87,10 +87,22 @@ func TestBandLetsGoAsTheFingersLift(t *testing.T) {
 	if !b.going || b.from != 20 || b.vel != 0 || !b.since.Equal(lift) {
 		t.Fatalf("goes back from %v at %v, since %v", b.from, b.vel, b.since)
 	}
-	// Going back, the coasting that follows moves nothing.
+	// The coasting that follows moves nothing, on its way back or once it
+	// is back: it doesn't bounce off the end again.
 	b.off = 12
 	if !b.scroll(pull(-8, lift), true, false, 0, macos.PhaseBegan) || b.from != 20 {
 		t.Fatal("coasting moved it on its way back")
+	}
+	back := b
+	back.going, back.off = false, 0
+	if !back.scroll(pull(-6, lift.Add(500*time.Millisecond)), true, false, 0, macos.PhaseChanged) || back.going {
+		t.Fatal("coasting bounced it off the end again, once back")
+	}
+	if !back.scroll(pull(0, lift.Add(600*time.Millisecond)), true, false, 0, macos.PhaseEnded) || back.coasting {
+		t.Fatal("coasting didn't end")
+	}
+	if back.scroll(pull(5, lift.Add(time.Second)), true, false, macos.PhaseBegan, 0) {
+		t.Fatal("the next gesture didn't scroll the view")
 	}
 	// The fingers catch it on the way, where it is.
 	b.scroll(pull(0, lift), true, false, macos.PhaseMayBegin, 0)

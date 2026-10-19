@@ -33,8 +33,9 @@ type band struct {
 	last time.Time
 	// going is whether the content goes back to its place (rebound): from
 	// off by from, at vel DIPs a second, since then. coasting is whether
-	// scrolling coasted into the end, which it bounces off: the rest of it
-	// moves nothing.
+	// what coasts on of the gesture moves nothing: it coasted into the end,
+	// which it bounces off, or the fingers lifted with the content
+	// stretched.
 	going, coasting bool
 	from, vel       float32
 	since           time.Time
@@ -119,7 +120,11 @@ func (b *band) scroll(ev ui.InputEvent, top, end bool, phase, momentum macos.Pha
 	case phase&(macos.PhaseEnded|macos.PhaseCancelled) != 0:
 		held := b.held
 		if held {
+			// The scrolling that coasts on after the fingers lift moves
+			// nothing, even once the content is back: it would bounce it
+			// off the end again.
 			b.goBack(ev.Time, 0)
+			b.coasting = true
 		}
 		return held
 	case phase&(macos.PhaseBegan|macos.PhaseMayBegin) != 0:
