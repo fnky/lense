@@ -71,7 +71,6 @@ const (
 	pageItems page = iota
 	pageSetup
 	pageSettings
-	pageEdit
 )
 
 // problem is something that went wrong, said so that the user can fix it.
@@ -481,9 +480,6 @@ func (a *app) lock(hard bool) {
 	a.reveal, a.reprompted = map[string]bool{}, map[string]bool{}
 	a.prob, a.confirm, a.flash = nil, nil, ""
 	a.tried = false
-	if a.page == pageEdit {
-		a.page = pageItems
-	}
 	a.onLock()
 }
 
@@ -886,8 +882,6 @@ func (a *app) escape() {
 	case a.page == pageSettings && a.recording:
 		a.recording = false
 	case a.page == pageSettings && a.configured():
-		a.page = pageItems
-	case a.page == pageEdit:
 		a.page = pageItems
 	case a.page == pageSetup && a.configured():
 		a.page = pageSettings
