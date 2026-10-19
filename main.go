@@ -203,6 +203,8 @@ func (s *shell) show() {
 		Shadow:    true,
 		Hidden:    true,
 		Content:   s.content,
+		// The inspector of development builds would take Shift-Cmd-C.
+		Page: mygo.PageOptions{DevTools: mygo.DevToolsDisabled},
 	})
 	w.SetPosition(x, y)
 	w.OnClose(func(e *mygo.CloseEvent) {
@@ -265,6 +267,7 @@ func (s *shell) openDetail(id string) {
 		MinWidth:  360,
 		MinHeight: 320,
 		Content:   ui.View(func(c *ui.Context) { a.detailWindow(c, id) }),
+		Page:      mygo.PageOptions{DevTools: mygo.DevToolsDisabled},
 	})
 	s.details[id] = w
 	w.OnClosed(func() { delete(s.details, id) })
@@ -396,6 +399,10 @@ func main() {
 	}
 	s := &shell{}
 	mygo.App.SetActivationPolicy(mygo.ActivationPolicyAccessory)
+	// No menu bar: its key equivalents, as the Edit menu's Copy, would take
+	// the keys of Quick Access before its window. Text fields cut, copy,
+	// paste and undo by themselves.
+	mygo.App.SetMenu(mygo.NewMenu(nil))
 	// The window hides rather than closes; keep running without it.
 	mygo.App.OnWindowAllClosed(func() {})
 	mygo.App.OnSecondInstance(func([]string, string) { s.show() })
