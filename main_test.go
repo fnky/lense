@@ -31,6 +31,11 @@ type fakeDesktop struct {
 	unlocks   int
 	notRun    bool
 	opened    int
+	// launched counts the launches, which start the app unless it
+	// staysClosed; starting is how many times it doesn't listen yet then.
+	launched    int
+	staysClosed bool
+	starting    int
 }
 
 func (d *fakeDesktop) load() (*bw.Store, error) {
@@ -42,6 +47,13 @@ func (d *fakeDesktop) load() (*bw.Store, error) {
 
 func (d *fakeDesktop) unlock(ctx context.Context, userID string) (bw.SymmetricKey, error) {
 	d.unlocks++
+	if d.notRun {
+		return bw.SymmetricKey{}, ipc.ErrNoSocket
+	}
+	if d.starting > 0 {
+		d.starting--
+		return bw.SymmetricKey{}, ipc.ErrNoSocket
+	}
 	if d.unlockErr != nil {
 		return bw.SymmetricKey{}, d.unlockErr
 	}
@@ -54,6 +66,13 @@ func (d *fakeDesktop) unlock(ctx context.Context, userID string) (bw.SymmetricKe
 func (d *fakeDesktop) running() bool   { return !d.notRun }
 func (d *fakeDesktop) installed() bool { return true }
 func (d *fakeDesktop) open() error     { d.opened++; return nil }
+func (d *fakeDesktop) launch() error {
+	d.launched++
+	if !d.staysClosed {
+		d.notRun = false
+	}
+	return nil
+}
 
 // fakeSystem is macOS: it records what was copied, filled and opened.
 type fakeSystem struct {
@@ -165,6 +184,7 @@ func newHarness(t *testing.T, f *bwtest.Fixture, configured bool) *harness {
 	h.sys.closed = h.a.hidden
 	h.a.version = "test"
 	h.a.now = func() time.Time { return time.Date(2026, 10, 19, 15, 20, 0, 0, time.UTC) }
+	h.a.sleep = func(time.Duration) {}
 	h.a.spawn, h.a.post = h.r.spawn, h.r.post
 	h.a.reload()
 	h.settle()
@@ -394,7 +414,7 @@ func TestTouchIDProblems(t *testing.T) {
 		{ipc.ErrNoAnswer, false, "Bitwarden didn't answer"},
 	} {
 		h := newHarness(t, nil, true)
-		h.desk.unlockErr, h.desk.notRun = tc.err, tc.notRun
+		h.desk.unlockErr, h.desk.notRun, h.desk.staysClosed = tc.err, tc.notRun, tc.notRun
 		h.click("Unlock with Touch ID")
 		if h.a.unlocked() {
 			t.Fatal("unlocked")
@@ -1316,5 +1336,29 @@ func TestPickersChoose(t *testing.T) {
 	}
 	if h.tt.HasText("Under Window") {
 		t.Fatal("the picker stays open")
+	}
+}
+
+func TestTouchIDOpensBitwarden(t *testing.T) {
+	// As the window shows, Touch ID is tried, and Bitwarden isn't opened
+	// for it: the window says it isn't open.
+	h := newHarness(t, nil, true)
+	h.desk.notRun, h.desk.starting = true, 3
+	h.a.shown()
+	h.settle()
+	if h.desk.launched != 0 || h.a.unlocked() {
+		t.Fatalf("launched %d, unlocked %v", h.desk.launched, h.a.unlocked())
+	}
+	h.has("Bitwarden isn't open")
+	// Asked for, Touch ID opens Bitwarden, and waits for it to listen.
+	h.click("Unlock with Touch ID")
+	if h.desk.launched != 1 || !h.a.unlocked() || h.desk.opened != 0 {
+		t.Fatalf("launched %d, opened %d, unlocked %v: %+v", h.desk.launched, h.desk.opened, h.a.unlocked(), h.a.lockProb)
+	}
+	if h.desk.unlocks != 1+1+3+1 {
+		t.Errorf("asked Bitwarden %d times", h.desk.unlocks)
+	}
+	if h.a.opening || h.a.busy != "" || h.a.holdOpen != 0 {
+		t.Errorf("opening %v, busy %q, held open %d", h.a.opening, h.a.busy, h.a.holdOpen)
 	}
 }

@@ -511,6 +511,7 @@ func (b *bitwardenApp) unlock(ctx context.Context, userID string) (bw.SymmetricK
 func (b *bitwardenApp) running() bool   { return macos.IsRunning(macos.BitwardenBundleID) }
 func (b *bitwardenApp) installed() bool { return macos.IsInstalled(macos.BitwardenBundleID) }
 func (b *bitwardenApp) open() error     { return macos.OpenApp(macos.BitwardenBundleID) }
+func (b *bitwardenApp) launch() error   { return macos.LaunchHidden(macos.BitwardenBundleID) }
 
 // macSystem is macOS, and the shell.
 type macSystem struct {

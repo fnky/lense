@@ -92,6 +92,19 @@ func OpenApp(bundleID string, urls ...string) error {
 	return nil
 }
 
+// LaunchHidden starts the app of bundleID in the background, hidden, as
+// for a service it gives: the app the user is in stays in front.
+func LaunchHidden(bundleID string) error {
+	out, err := exec.Command("/usr/bin/open", "-g", "-j", "-b", bundleID).CombinedOutput()
+	if err != nil {
+		if msg := strings.TrimSpace(string(out)); msg != "" {
+			return errors.New(msg)
+		}
+		return err
+	}
+	return nil
+}
+
 // browsers are the browsers whose address AppleScript tells, and how.
 var browsers = map[string]string{
 	"com.apple.Safari":                    "safari",

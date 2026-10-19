@@ -28,7 +28,10 @@ type desktop interface {
 	unlock(ctx context.Context, userID string) (bw.SymmetricKey, error)
 	running() bool
 	installed() bool
+	// open brings the app to the front, opening it; launch opens it out
+	// of the way, in the background, for Touch ID.
 	open() error
+	launch() error
 }
 
 // system is what the app asks of macOS and of its shell.
@@ -122,8 +125,9 @@ type app struct {
 	cfg     config
 	version string
 	now     func() time.Time
-	post    func(func()) // runs a function on the main thread, then redraws
-	spawn   func(func()) // starts work in the background
+	sleep   func(time.Duration) // waits, in the background
+	post    func(func())        // runs a function on the main thread, then redraws
+	spawn   func(func())        // starts work in the background
 	saveCfg func(config)
 	sys     system
 	desk    desktop
@@ -152,6 +156,7 @@ type app struct {
 	index    *search.Index
 	locked   bool
 	busy     string // an unlock under way: "touch", "password"
+	opening  bool   // the desktop app opening, for Touch ID
 	password string
 	lockProb *problem
 	pwField  ui.Handle
@@ -234,6 +239,7 @@ func newApp(cfg config, desk desktop, sys system) *app {
 	a := &app{
 		cfg:           cfg,
 		now:           time.Now,
+		sleep:         time.Sleep,
 		post:          func(fn func()) { fn() },
 		spawn:         func(fn func()) { fn() },
 		saveCfg:       func(config) {},
@@ -558,14 +564,15 @@ func (a *app) shown() {
 	if a.configured() && !a.unlocked() && !a.tried && a.busy == "" && a.lockProb == nil && a.page == pageItems {
 		a.tried = true
 		if a.touchIDOffered() {
-			a.unlockTouchID()
+			a.unlockTouchID(false)
 		}
 	}
 }
 
 // unlockTouchID unlocks with Touch ID: this Mac's, when the app locked
-// itself and kept the vault, else through the desktop app.
-func (a *app) unlockTouchID() {
+// itself and kept the vault, else through the desktop app, which launch
+// opens first if it isn't running, as the user asked for Touch ID.
+func (a *app) unlockTouchID(launch bool) {
 	if a.busy != "" {
 		return
 	}
@@ -599,17 +606,29 @@ func (a *app) unlockTouchID() {
 	a.busy = "touch"
 	a.holdOpen++
 	st := a.store
+	launch = launch && a.desk.installed() && !a.desk.running()
 	a.spawn(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
 		key, err := a.desk.unlock(ctx, acc.ID)
+		if launch && errors.Is(err, ipc.ErrNoSocket) {
+			// Touch ID goes through the desktop app: open it, out of the
+			// way, and ask it once it listens.
+			a.post(func() { a.opening = true })
+			if lerr := a.desk.launch(); lerr == nil {
+				for i := 0; i < launchPolls && errors.Is(err, ipc.ErrNoSocket) && ctx.Err() == nil; i++ {
+					a.sleep(launchPoll)
+					key, err = a.desk.unlock(ctx, acc.ID)
+				}
+			}
+		}
 		var v *bw.Vault
 		if err == nil {
 			v, err = st.Decrypt(acc.ID, key)
 			key.Wipe()
 		}
 		a.post(func() {
-			a.busy = ""
+			a.busy, a.opening = "", false
 			a.release()
 			if err != nil {
 				a.lockProb = a.unlockProblem(err, acc)
@@ -619,6 +638,13 @@ func (a *app) unlockTouchID() {
 		})
 	})
 }
+
+// The desktop app, launched, listens within launchPolls times launchPoll,
+// or not at all: its browser integration is off.
+const (
+	launchPoll  = 500 * time.Millisecond
+	launchPolls = 60
+)
 
 // release lets the window close again as it loses the focus, and gives
 // it the keyboard back from the prompt it waited for.
@@ -640,8 +666,7 @@ func (a *app) unlockProblem(err error, acc bw.Account) *problem {
 	case errors.Is(err, ipc.ErrNoSocket) && !a.desk.running():
 		return &problem{
 			title:  "Bitwarden isn't open",
-			detail: "Touch ID unlocks through the Bitwarden app. Open it, then try again, or enter your master password.",
-			fix:    "Open Bitwarden", do: a.openBitwarden,
+			detail: "Touch ID unlocks through the Bitwarden app, which Unlock with Touch ID opens. Or enter your master password.",
 		}
 	case errors.Is(err, ipc.ErrNoSocket):
 		return &problem{

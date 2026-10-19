@@ -25,13 +25,16 @@ func (a *app) lockedView(c *ui.Context, k ink) {
 			}
 			if a.touchIDOffered() {
 				label := "Unlock with Touch ID"
-				if a.busy == "touch" {
+				switch {
+				case a.opening:
+					label = "Opening Bitwarden…"
+				case a.busy == "touch" && a.vault == nil:
+					label = "Confirm in Bitwarden…"
+				case a.busy == "touch":
 					label = "Waiting for Touch ID…"
-					if a.vault == nil {
-						label = "Confirm in Bitwarden…"
-					}
 				}
-				primaryButton(c.Key("touch"), k, label, a.busy != "").AlignSelf(ui.Stretch).Padding(7, 12).OnClick(a.unlockTouchID)
+				primaryButton(c.Key("touch"), k, label, a.busy != "").AlignSelf(ui.Stretch).Padding(7, 12).
+					OnClick(func() { a.unlockTouchID(true) })
 			}
 			// The button as tall as the field.
 			ui.Row(c).Gap(8).AlignSelf(ui.Stretch).AlignItems(ui.Stretch).Children(func() {
