@@ -32,10 +32,34 @@ type fakeDesktop struct {
 	notRun    bool
 	opened    int
 	// launched counts the launches, which start the app unless it
-	// staysClosed; starting is how many times it doesn't listen yet then.
+	// staysClosed; starting is how many times it doesn't answer yet then,
+	// with startErr (ipc.ErrNoSocket by default), and probes how many
+	// times it was asked whether it listens.
 	launched    int
 	staysClosed bool
 	starting    int
+	startErr    error
+	probes      int
+}
+
+// answer is what the app answers as it is asked anything.
+func (d *fakeDesktop) answer() error {
+	switch {
+	case d.notRun:
+		return ipc.ErrNoSocket
+	case d.starting > 0:
+		d.starting--
+		if d.startErr != nil {
+			return d.startErr
+		}
+		return ipc.ErrNoSocket
+	}
+	return nil
+}
+
+func (d *fakeDesktop) listens(ctx context.Context, userID string) error {
+	d.probes++
+	return d.answer()
 }
 
 func (d *fakeDesktop) load() (*bw.Store, error) {
@@ -47,12 +71,8 @@ func (d *fakeDesktop) load() (*bw.Store, error) {
 
 func (d *fakeDesktop) unlock(ctx context.Context, userID string) (bw.SymmetricKey, error) {
 	d.unlocks++
-	if d.notRun {
-		return bw.SymmetricKey{}, ipc.ErrNoSocket
-	}
-	if d.starting > 0 {
-		d.starting--
-		return bw.SymmetricKey{}, ipc.ErrNoSocket
+	if err := d.answer(); err != nil {
+		return bw.SymmetricKey{}, err
 	}
 	if d.unlockErr != nil {
 		return bw.SymmetricKey{}, d.unlockErr
@@ -1355,10 +1375,22 @@ func TestTouchIDOpensBitwarden(t *testing.T) {
 	if h.desk.launched != 1 || !h.a.unlocked() || h.desk.opened != 0 {
 		t.Fatalf("launched %d, opened %d, unlocked %v: %+v", h.desk.launched, h.desk.opened, h.a.unlocked(), h.a.lockProb)
 	}
-	if h.desk.unlocks != 1+1+3+1 {
-		t.Errorf("asked Bitwarden %d times", h.desk.unlocks)
+	// As the window showed, as the button asked, as Bitwarden answered.
+	if h.desk.unlocks != 1+1+1 || h.desk.probes != 3+1 {
+		t.Errorf("asked Bitwarden to unlock %d times, whether it listens %d", h.desk.unlocks, h.desk.probes)
 	}
 	if h.a.opening || h.a.busy != "" || h.a.holdOpen != 0 {
 		t.Errorf("opening %v, busy %q, held open %d", h.a.opening, h.a.busy, h.a.holdOpen)
+	}
+}
+
+func TestTouchIDWaitsForBitwardenToAnswer(t *testing.T) {
+	// Launched, Bitwarden listens before it answers: the first asks get no
+	// answer, and Touch ID waits for one rather than giving up.
+	h := newHarness(t, nil, true)
+	h.desk.notRun, h.desk.starting, h.desk.startErr = true, 4, ipc.ErrNoAnswer
+	h.click("Unlock with Touch ID")
+	if !h.a.unlocked() || h.desk.probes != 5 || h.desk.unlocks != 2 {
+		t.Fatalf("unlocked %v, probed %d, asked %d: %+v", h.a.unlocked(), h.desk.probes, h.desk.unlocks, h.a.lockProb)
 	}
 }

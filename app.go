@@ -26,6 +26,9 @@ type desktop interface {
 	// unlock asks the app to unlock the account with Touch ID, and
 	// returns its user key.
 	unlock(ctx context.Context, userID string) (bw.SymmetricKey, error)
+	// listens reports whether the app answers, soon: an error of ipc
+	// while it starts.
+	listens(ctx context.Context, userID string) error
 	running() bool
 	installed() bool
 	// open brings the app to the front, opening it; launch opens it out
@@ -616,8 +619,8 @@ func (a *app) unlockTouchID(launch bool) {
 			// way, and ask it once it listens.
 			a.post(func() { a.opening = true })
 			if lerr := a.desk.launch(); lerr == nil {
-				for i := 0; i < launchPolls && errors.Is(err, ipc.ErrNoSocket) && ctx.Err() == nil; i++ {
-					a.sleep(launchPoll)
+				if err = a.awaitDesktop(ctx, acc.ID); err == nil {
+					a.post(func() { a.opening = false })
 					key, err = a.desk.unlock(ctx, acc.ID)
 				}
 			}
@@ -639,11 +642,35 @@ func (a *app) unlockTouchID(launch bool) {
 	})
 }
 
-// The desktop app, launched, listens within launchPolls times launchPoll,
-// or not at all: its browser integration is off.
+// awaitDesktop waits for the desktop app, launched, to answer: its socket
+// comes as it starts, its answers once its window has loaded. It returns
+// nil once it answers, else why it doesn't.
+func (a *app) awaitDesktop(ctx context.Context, userID string) error {
+	start := time.Now()
+	err := ipc.ErrNoSocket
+	for i := 0; i < launchPolls && time.Since(start) < launchWait && ctx.Err() == nil; i++ {
+		a.sleep(launchPoll)
+		if err = a.desk.listens(ctx, userID); !starting(err) {
+			return err
+		}
+	}
+	return err
+}
+
+// starting reports whether err is the desktop app's while it starts: it
+// doesn't listen yet, or doesn't answer.
+func starting(err error) bool {
+	return errors.Is(err, ipc.ErrNoSocket) || errors.Is(err, ipc.ErrNoAnswer) ||
+		errors.Is(err, ipc.ErrDropped) || errors.Is(err, context.DeadlineExceeded)
+}
+
+// The desktop app, launched, answers within launchWait, asked every
+// launchPoll at most launchPolls times, or not at all: its browser
+// integration is off.
 const (
 	launchPoll  = 500 * time.Millisecond
-	launchPolls = 60
+	launchPolls = 90
+	launchWait  = 45 * time.Second
 )
 
 // release lets the window close again as it loses the focus, and gives

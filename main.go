@@ -508,6 +508,20 @@ func (b *bitwardenApp) unlock(ctx context.Context, userID string) (bw.SymmetricK
 	return c.Unlock(ctx, userID)
 }
 
+// listens asks the app how Touch ID unlocks the account, waiting a few
+// seconds for its answer, as it may not answer yet as it starts.
+func (b *bitwardenApp) listens(ctx context.Context, userID string) error {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	c, err := ipc.Dial(ctx, b.appID, userID)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+	_, err = c.Status(ctx, userID)
+	return err
+}
+
 func (b *bitwardenApp) running() bool   { return macos.IsRunning(macos.BitwardenBundleID) }
 func (b *bitwardenApp) installed() bool { return macos.IsInstalled(macos.BitwardenBundleID) }
 func (b *bitwardenApp) open() error     { return macos.OpenApp(macos.BitwardenBundleID) }
