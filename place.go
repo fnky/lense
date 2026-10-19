@@ -99,7 +99,7 @@ func (g *guides) carry(prev guides, now time.Time) {
 }
 
 // flash is how blue a guide is a while d after the window snapped to it:
-// fully at first, then white again after about half a second.
+// fully at first, then gray again after about half a second.
 func flash(d time.Duration) float32 {
 	const hold, fade = 150 * time.Millisecond, 450 * time.Millisecond
 	switch {

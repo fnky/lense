@@ -967,16 +967,19 @@ func TestGuidesSnapshot(t *testing.T) {
 	if x != 376 || !g.snapY {
 		t.Fatalf("snapped to %d,%d %+v", x, y, g)
 	}
+	// Over dark and light backgrounds alike, as the gray shows over both.
+	dark, light := ui.RGB(40, 44, 52), ui.RGB(236, 238, 242)
 	for _, tc := range []struct {
 		name string
 		ago  time.Duration
-	}{{"guides-snapped", 0}, {"guides-settled", time.Second}} {
+		bg   ui.Color
+	}{{"guides-snapped", 0, dark}, {"guides-settled", time.Second, dark}, {"guides-settled-light", time.Second, light}} {
 		g.carry(guides{}, time.Now().Add(-tc.ago))
 		tt := ui.NewTester(func(c *ui.Context) {
-			c.Root().Background(ui.RGB(40, 44, 52))
+			c.Root().Background(tc.bg)
 			ui.Box(c).Fill().Draw(func(p *ui.Painter, r ui.Rect) {
 				drawGuides(p, r, g, ui.Hex("#3D7FF0"))
-				p.Fill(ui.Rect{X: float32(x - work.X), Y: float32(y - work.Y), W: windowWidth, H: windowHeight}, ui.RGBA(255, 255, 255, 0.9), radius)
+				p.Fill(ui.Rect{X: float32(x - work.X), Y: float32(y - work.Y), W: windowWidth, H: windowHeight}, ui.RGBA(128, 128, 128, 0.25), radius)
 			})
 		}, work.W, work.H)
 		snapshot(t, tt, tc.name)
