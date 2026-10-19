@@ -1,0 +1,149 @@
+//go:build darwin
+
+// Package macos reaches the parts of macOS that MyGo does not cover: Touch
+// ID, the frontmost app and its focused field, typing into it, the
+// pasteboard's concealed type and the browser's address. It calls them
+// through the Objective-C runtime with purego, without cgo.
+package macos
+
+import (
+	"runtime"
+	"sync"
+	"unsafe"
+
+	"github.com/ebitengine/purego"
+	"github.com/ebitengine/purego/objc"
+)
+
+var (
+	loadOnce sync.Once
+	loadErr  error
+
+	poolPush func() uintptr
+	poolPop  func(uintptr)
+
+	cfRelease func(uintptr)
+	cfRetain  func(uintptr) uintptr
+
+	// CoreGraphics
+	cgEventSourceCreate             func(state int32) uintptr
+	cgEventCreateKeyboardEvent      func(src uintptr, key uint16, down bool) uintptr
+	cgEventKeyboardSetUnicodeString func(ev uintptr, n uint64, chars *uint16)
+	cgEventSetFlags                 func(ev uintptr, flags uint64)
+	cgEventPost                     func(tap uint32, ev uintptr)
+
+	// Accessibility
+	axIsProcessTrustedWithOptions func(opts uintptr) bool
+	axCreateSystemWide            func() uintptr
+	axCreateApplication           func(pid int32) uintptr
+	axCopyAttributeValue          func(el uintptr, attr uintptr, out *uintptr) int32
+	axSetAttributeValue           func(el uintptr, attr uintptr, value uintptr) int32
+	axTrustedPromptKey            uintptr // kAXTrustedCheckOptionPrompt
+)
+
+func lib(path string) (uintptr, error) {
+	return purego.Dlopen(path, purego.RTLD_GLOBAL|purego.RTLD_NOW)
+}
+
+// load opens the frameworks, once.
+func load() error {
+	loadOnce.Do(func() {
+		objcLib, err := lib("/usr/lib/libobjc.A.dylib")
+		if err != nil {
+			loadErr = err
+			return
+		}
+		for _, p := range []string{
+			"/System/Library/Frameworks/Foundation.framework/Foundation",
+			"/System/Library/Frameworks/AppKit.framework/AppKit",
+			"/System/Library/Frameworks/LocalAuthentication.framework/LocalAuthentication",
+		} {
+			if _, err := lib(p); err != nil {
+				loadErr = err
+				return
+			}
+		}
+		cf, err := lib("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
+		if err != nil {
+			loadErr = err
+			return
+		}
+		cg, err := lib("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
+		if err != nil {
+			loadErr = err
+			return
+		}
+		as, err := lib("/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices")
+		if err != nil {
+			loadErr = err
+			return
+		}
+		purego.RegisterLibFunc(&poolPush, objcLib, "objc_autoreleasePoolPush")
+		purego.RegisterLibFunc(&poolPop, objcLib, "objc_autoreleasePoolPop")
+		purego.RegisterLibFunc(&cfRelease, cf, "CFRelease")
+		purego.RegisterLibFunc(&cfRetain, cf, "CFRetain")
+		purego.RegisterLibFunc(&cgEventSourceCreate, cg, "CGEventSourceCreate")
+		purego.RegisterLibFunc(&cgEventCreateKeyboardEvent, cg, "CGEventCreateKeyboardEvent")
+		purego.RegisterLibFunc(&cgEventKeyboardSetUnicodeString, cg, "CGEventKeyboardSetUnicodeString")
+		purego.RegisterLibFunc(&cgEventSetFlags, cg, "CGEventSetFlags")
+		purego.RegisterLibFunc(&cgEventPost, cg, "CGEventPost")
+		purego.RegisterLibFunc(&axIsProcessTrustedWithOptions, as, "AXIsProcessTrustedWithOptions")
+		purego.RegisterLibFunc(&axCreateSystemWide, as, "AXUIElementCreateSystemWide")
+		purego.RegisterLibFunc(&axCreateApplication, as, "AXUIElementCreateApplication")
+		purego.RegisterLibFunc(&axCopyAttributeValue, as, "AXUIElementCopyAttributeValue")
+		purego.RegisterLibFunc(&axSetAttributeValue, as, "AXUIElementSetAttributeValue")
+		if p, err := purego.Dlsym(as, "kAXTrustedCheckOptionPrompt"); err == nil {
+			axTrustedPromptKey = *(*uintptr)(cptr(p))
+		}
+	})
+	return loadErr
+}
+
+// withPool runs fn in an autorelease pool, on one thread.
+func withPool(fn func()) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	p := poolPush()
+	defer poolPop(p)
+	fn()
+}
+
+var selCache sync.Map
+
+func sel(name string) objc.SEL {
+	if s, ok := selCache.Load(name); ok {
+		return s.(objc.SEL)
+	}
+	s := objc.RegisterName(name)
+	selCache.Store(name, s)
+	return s
+}
+
+func class(name string) objc.ID { return objc.ID(objc.GetClass(name)) }
+
+// nsString returns an autoreleased NSString of s.
+func nsString(s string) objc.ID {
+	return class("NSString").Send(sel("stringWithUTF8String:"), s)
+}
+
+// goString copies an NSString.
+func goString(s objc.ID) string {
+	if s == 0 {
+		return ""
+	}
+	p := objc.Send[uintptr](s, sel("UTF8String"))
+	if p == 0 {
+		return ""
+	}
+	n := 0
+	for *(*byte)(unsafe.Add(cptr(p), n)) != 0 {
+		n++
+	}
+	return string(unsafe.Slice((*byte)(cptr(p)), n))
+}
+
+// cptr turns the address of C memory, which Go's collector does not move,
+// into a pointer.
+func cptr(p uintptr) unsafe.Pointer {
+	return *(*unsafe.Pointer)(unsafe.Pointer(&p))
+}

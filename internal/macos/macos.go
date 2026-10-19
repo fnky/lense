@@ -1,0 +1,41 @@
+package macos
+
+import "errors"
+
+// App is a running app.
+type App struct {
+	PID      int
+	BundleID string
+	Name     string
+}
+
+// FieldKind is the kind of the element with the keyboard focus.
+type FieldKind int
+
+const (
+	FieldNone FieldKind = iota
+	FieldText
+	FieldPassword
+)
+
+var (
+	// ErrCanceled means the user, or the system, canceled Touch ID.
+	ErrCanceled = errors.New("Touch ID was canceled")
+	// ErrFallback means the user chose to enter the master password.
+	ErrFallback = errors.New("the master password was chosen")
+	// ErrBiometricsUnavailable means the Mac has no Touch ID, or no
+	// finger enrolled.
+	ErrBiometricsUnavailable = errors.New("Touch ID is not available on this Mac")
+	// ErrBiometricsLockout means Touch ID failed too often, and needs the
+	// Mac's password before it works again.
+	ErrBiometricsLockout = errors.New("Touch ID is locked after too many attempts")
+	// ErrAuthFailed means the finger was not recognized.
+	ErrAuthFailed = errors.New("Touch ID did not recognize the fingerprint")
+)
+
+// BitwardenBundleID is the bundle identifier of the Bitwarden desktop app.
+const BitwardenBundleID = "com.bitwarden.desktop"
+
+// AccessibilitySettingsURL opens the pane of System Settings that lets
+// apps control the computer.
+const AccessibilitySettingsURL = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
