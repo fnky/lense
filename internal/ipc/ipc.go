@@ -314,10 +314,12 @@ func (c *Client) decrypt(raw json.RawMessage) ([]byte, error) {
 
 // answer is a decrypted answer of the desktop app.
 type answer struct {
-	Command    string          `json:"command"`
-	MessageID  int             `json:"messageId"`
-	Response   json.RawMessage `json:"response"`
-	UserKeyB64 string          `json:"userKeyB64"`
+	Command   string          `json:"command"`
+	MessageID int             `json:"messageId"`
+	Response  json.RawMessage `json:"response"`
+	// UserKeyB64 is the user key, in base64 as a JSON string: bytes, which
+	// Unlock wipes once it decoded them, as it could not a string.
+	UserKeyB64 json.RawMessage `json:"userKeyB64"`
 	Timestamp  int64           `json:"timestamp"`
 }
 
@@ -353,7 +355,10 @@ func (c *Client) call(ctx context.Context, cmd map[string]any) (answer, error) {
 			continue
 		}
 		var a answer
-		if json.Unmarshal(b, &a) != nil || a.MessageID != id {
+		err = json.Unmarshal(b, &a)
+		clear(b) // the answer decrypted, the user key in it
+		if err != nil || a.MessageID != id {
+			clear(a.UserKeyB64)
 			continue
 		}
 		return a, nil
@@ -385,14 +390,19 @@ func (c *Client) Unlock(ctx context.Context, userID string) (bw.SymmetricKey, er
 	if err != nil {
 		return bw.SymmetricKey{}, err
 	}
+	defer clear(a.UserKeyB64)
 	var ok bool
-	if json.Unmarshal(a.Response, &ok) != nil || !ok || a.UserKeyB64 == "" {
+	if json.Unmarshal(a.Response, &ok) != nil || !ok || len(a.UserKeyB64) < 2 || a.UserKeyB64[0] != '"' {
 		return bw.SymmetricKey{}, ErrDenied
 	}
-	raw, err := base64.StdEncoding.DecodeString(a.UserKeyB64)
+	// Base64 has nothing a JSON string escapes: its quotes go, and the
+	// rest decodes into memory wiped once the key copied it.
+	b64 := a.UserKeyB64[1 : len(a.UserKeyB64)-1]
+	raw := make([]byte, base64.StdEncoding.DecodedLen(len(b64)))
+	defer clear(raw)
+	n, err := base64.StdEncoding.Decode(raw, b64)
 	if err != nil {
 		return bw.SymmetricKey{}, fmt.Errorf("ipc: the user key: %w", err)
 	}
-	defer clear(raw)
-	return bw.NewSymmetricKey(raw)
+	return bw.NewSymmetricKey(raw[:n])
 }
