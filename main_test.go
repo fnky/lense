@@ -75,17 +75,24 @@ type fakeSystem struct {
 	pageURLs map[string]string
 	// phase and momentum are those of the scrolling, none by default.
 	phase, momentum macos.Phase
+	// closed is told the window closed, as hide closes it.
+	closed func()
 }
 
 func (s *fakeSystem) copy(text string, secret bool) {
 	s.copied = append(s.copied, text)
 	s.secret = append(s.secret, secret)
 }
-func (s *fakeSystem) openURL(u string)     { s.opened = append(s.opened, u) }
-func (s *fakeSystem) biometrics() bool     { return s.bio }
-func (s *fakeSystem) trusted(bool) bool    { return s.trust }
-func (s *fakeSystem) show()                { s.shown++ }
-func (s *fakeSystem) hide()                { s.hidden++ }
+func (s *fakeSystem) openURL(u string)  { s.opened = append(s.opened, u) }
+func (s *fakeSystem) biometrics() bool  { return s.bio }
+func (s *fakeSystem) trusted(bool) bool { return s.trust }
+func (s *fakeSystem) show()             { s.shown++ }
+func (s *fakeSystem) hide() {
+	s.hidden++
+	if s.closed != nil {
+		s.closed() // as the shell tells the app the window closed
+	}
+}
 func (s *fakeSystem) openDetail(id string) { s.details = append(s.details, id) }
 func (s *fakeSystem) authenticate(string) error {
 	s.mu.Lock()
@@ -155,6 +162,7 @@ func newHarness(t *testing.T, f *bwtest.Fixture, configured bool) *harness {
 	h.desk = &fakeDesktop{t: t, f: f, path: f.Write(t)}
 	h.sys = &fakeSystem{bio: true, trust: true}
 	h.a = newApp(cfg, h.desk, h.sys)
+	h.sys.closed = h.a.hidden
 	h.a.version = "test"
 	h.a.now = func() time.Time { return time.Date(2026, 10, 19, 15, 20, 0, 0, time.UTC) }
 	h.a.spawn, h.a.post = h.r.spawn, h.r.post
@@ -1270,5 +1278,24 @@ func TestTooltipsTurnOff(t *testing.T) {
 	h.settle()
 	if tips, _ := h.rest("Settings (⌘,)"); len(tips) > 0 {
 		t.Fatalf("tooltips off, the settings' shows %q", tips)
+	}
+}
+
+func TestHidingForgetsWhatShowed(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.unlock()
+	h.tt.Type("git")
+	h.settle()
+	it := h.a.selected()
+	h.a.reveal[fieldKey(it.ID, 1)] = true
+	h.a.reprompted[it.ID] = true
+	// Filling hides the window, as going elsewhere does: what it revealed
+	// goes with it, what it showed stays for the next time.
+	h.key(ui.Shift, ui.KeyEnter)
+	if h.sys.hidden != 1 || len(h.a.reveal) != 0 || len(h.a.reprompted) != 0 {
+		t.Fatalf("hidden %d, revealed %v, reprompted %v", h.sys.hidden, h.a.reveal, h.a.reprompted)
+	}
+	if h.a.query != "git" || h.a.selected() != it {
+		t.Fatalf("query %q, chosen %v", h.a.query, h.a.selected())
 	}
 }

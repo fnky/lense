@@ -250,6 +250,8 @@ func (s *shell) show() {
 	w.OnClosed(func() {
 		if s.win == w {
 			s.win = nil
+			a.hidden()
+			s.redraw() // the windows of items, which reveal with it
 			// The footer's window closes with it.
 			s.bar, s.footer, a.nativeBar = 0, nil, false
 			a.recordID = ""

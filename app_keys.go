@@ -137,9 +137,17 @@ func (a *app) caretAtEnd() bool {
 // close puts Quick Access away, and forgets what it showed for the moment:
 // secrets revealed, master passwords asked for. The vault stays unlocked.
 func (a *app) close() {
-	a.reveal, a.reprompted = map[string]bool{}, map[string]bool{}
-	a.large, a.mode, a.fieldSel = nil, modeResults, 0
+	a.hidden()
+	a.mode, a.fieldSel = modeResults, 0
 	a.sys.hide()
+}
+
+// hidden forgets what the window revealed, as it goes, however it goes:
+// the passwords shown, Large Type, and the master password given for the
+// items that ask for it. The rest stays as it was for the next time.
+func (a *app) hidden() {
+	a.reveal, a.reprompted = map[string]bool{}, map[string]bool{}
+	a.large = nil
 }
 
 // --- The fields of the item chosen ---
