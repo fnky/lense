@@ -48,6 +48,27 @@ func (a *app) settingsView(c *ui.Context, k ink) {
 			}
 			switchRow(c.Key("touch"), k, "Unlock with Touch ID", detail, &a.cfg.TouchID, a.changed)
 		})
+		section(c, k, "Appearance", func() {
+			var labels []string
+			sel := materials[0].label
+			for _, m := range materials {
+				labels = append(labels, m.label)
+				if m.id == a.cfg.Material {
+					sel = m.label
+				}
+			}
+			settingRow(c, k, "Window material", "What shows through behind the window, blurred, as macOS's own panels do. Solid shows none.", func() {
+				ui.Select(c.Key("material"), &sel, labels).Width(170).OnChange(func() {
+					for _, m := range materials {
+						if m.label == sel {
+							a.cfg.Material = m.id
+						}
+					}
+					a.changed()
+					a.applyMaterial()
+				})
+			})
+		})
 		section(c, k, "Clipboard", func() {
 			secs := []int{0, 30, 60, 90, 120, 300}
 			labels := []string{"Never", "After 30 seconds", "After 1 minute", "After 90 seconds", "After 2 minutes", "After 5 minutes"}

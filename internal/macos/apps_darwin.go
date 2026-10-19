@@ -159,3 +159,43 @@ func OwnPID() int {
 	})
 	return pid
 }
+
+// RoundMaterial rounds the corners of the material behind a window's
+// content (the NSVisualEffectView of MyGo's vibrancy) as its content's, by
+// radius points, continuously as macOS rounds its own, and has the window
+// draw its shadow by that shape. Call it on the main thread.
+func RoundMaterial(nsWindow uintptr, radius float64) {
+	if load() != nil || nsWindow == 0 {
+		return
+	}
+	withPool(func() {
+		w := objc.ID(nsWindow)
+		effect := class("NSVisualEffectView")
+		var find func(v objc.ID, depth int) objc.ID
+		find = func(v objc.ID, depth int) objc.ID {
+			if v == 0 || depth > 3 {
+				return 0
+			}
+			if objc.Send[bool](v, sel("isKindOfClass:"), effect) {
+				return v
+			}
+			subs := v.Send(sel("subviews"))
+			for i := range objc.Send[uint](subs, sel("count")) {
+				if f := find(subs.Send(sel("objectAtIndex:"), i), depth+1); f != 0 {
+					return f
+				}
+			}
+			return 0
+		}
+		ev := find(w.Send(sel("contentView")), 0)
+		if ev == 0 {
+			return
+		}
+		ev.Send(sel("setWantsLayer:"), true)
+		layer := ev.Send(sel("layer"))
+		layer.Send(sel("setCornerRadius:"), radius)
+		layer.Send(sel("setCornerCurve:"), nsString("continuous"))
+		layer.Send(sel("setMasksToBounds:"), true)
+		w.Send(sel("invalidateShadow"))
+	})
+}

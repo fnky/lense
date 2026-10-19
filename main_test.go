@@ -1014,3 +1014,21 @@ func TestGuidesSnapshot(t *testing.T) {
 		snapshot(t, tt, tc.name)
 	}
 }
+
+func TestWindowMaterial(t *testing.T) {
+	h := newHarness(t, nil, true)
+	if !h.a.cfg.translucent() || h.a.cfg.Material != "popover" {
+		t.Fatalf("material by default %q", h.a.cfg.Material)
+	}
+	applied := 0
+	h.a.applyMaterial = func() { applied++ }
+	h.unlock()
+	h.tt.SetSize(windowWidth, 2400)
+	h.key(ui.Cmd, ui.KeyComma)
+	h.has("Appearance", "Window material", "Popover")
+	h.click("Popover")
+	h.click("Solid")
+	if h.a.cfg.Material != "solid" || h.a.cfg.translucent() || applied != 1 {
+		t.Fatalf("material %q, applied %d", h.a.cfg.Material, applied)
+	}
+}

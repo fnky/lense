@@ -30,6 +30,10 @@ type config struct {
 	// clipboard; 0 forever.
 	ClearClipboard int `json:"clearClipboard"`
 
+	// Material is what the window shows behind its content: "solid", or a
+	// material of macOS, which blurs what is behind the window.
+	Material string `json:"material,omitempty"`
+
 	// Vault is the vault shown: "" all of them, "personal", or an
 	// organization's ID.
 	Vault  string     `json:"vault,omitempty"`
@@ -52,8 +56,23 @@ func defaultConfig() config {
 		TouchID:        true,
 		LockOnSleep:    true,
 		ClearClipboard: 90,
+		Material:       "popover",
 	}
 }
+
+// materials are the materials the window may show, with their names in
+// the settings: solid, then macOS's, as mygo.Vibrancy names them.
+var materials = []struct{ id, label string }{
+	{"solid", "Solid"},
+	{"popover", "Popover"},
+	{"menu", "Menu"},
+	{"hud", "HUD"},
+	{"sidebar", "Sidebar"},
+	{"under-window", "Under Window"},
+}
+
+// translucent reports whether the window shows a material.
+func (c *config) translucent() bool { return c.Material != "" && c.Material != "solid" }
 
 func loadConfig(dir string) config {
 	cfg := defaultConfig()

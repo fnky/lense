@@ -10,9 +10,14 @@ import (
 	"bitwarden-mini/internal/search"
 	"bitwarden-mini/internal/totp"
 
+	"github.com/egoist/mygo/plugins/glass"
 	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
 )
+
+// footerHeight is the height of the footer, which the content scrolls
+// under.
+const footerHeight = 36
 
 // itemsView is Quick Access: the search, the items found, and the
 // details of the one chosen. The search keeps the keyboard: the keys act
@@ -20,20 +25,24 @@ import (
 func (a *app) itemsView(c *ui.Context, k ink) {
 	ui.Column(c).Fill().Children(func() {
 		a.header(c, k)
-		ui.Row(c).Grow(1).AlignItems(ui.Stretch).MinHeight(0).Children(func() {
-			a.itemList(c, k)
-			ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Children(func() {
-				switch it := a.selected(); {
-				case a.prob != nil:
-					ui.Column(c).Padding(16).Children(func() { problemBox(c.Key("prob"), k, a.prob) })
-				case it != nil:
-					a.details(c, k, it, false)
-				default:
-					a.noItem(c, k)
-				}
+		// The list and the details go down to the window's bottom, and
+		// scroll under the footer, which floats over them.
+		ui.Box(c.Key("body")).Grow(1).MinHeight(0).Children(func() {
+			ui.Row(c).Fill().AlignItems(ui.Stretch).Children(func() {
+				a.itemList(c, k)
+				ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Children(func() {
+					switch it := a.selected(); {
+					case a.prob != nil:
+						ui.Column(c).Padding(16).Children(func() { problemBox(c.Key("prob"), k, a.prob) })
+					case it != nil:
+						a.details(c, k, it, false)
+					default:
+						a.noItem(c, k)
+					}
+				})
 			})
+			a.footer(c, k)
 		})
-		a.footer(c, k)
 	})
 	if a.mode == modeVaults {
 		a.vaultMenu(c, k)
@@ -110,7 +119,7 @@ func (a *app) vaultMenu(c *ui.Context, k ink) {
 		a.search.Focus()
 	})
 	panel := ui.Column(c.Key("vault-menu")).Absolute().Top(52).Right(46).Width(300).MaxHeight(windowHeight-100).
-		Padding(6).Radius(12).Background(k.bg).Border(1, k.line).Shadow(0, 10, 30, 0, ui.RGBA(0, 0, 0, 0.25)).
+		Padding(6).Radius(12).Background(k.raised).Border(1, k.line).Shadow(0, 10, 30, 0, ui.RGBA(0, 0, 0, 0.25)).
 		Label("Vaults")
 	panel.Children(func() {
 		ui.Scroll(c.Key("vault-scroll")).Gap(1).Children(func() {
@@ -165,7 +174,8 @@ func (a *app) vaultRow(c *ui.Context, k ink, v vaultChoice) {
 // itemList lists the rows found.
 func (a *app) itemList(c *ui.Context, k ink) {
 	list := ui.List(c.Key("items"), &a.list, len(a.rows), func(i int) { a.rowView(c, k, i) }).
-		Width(listWidth).Shrink(0).Padding(6, 8).Background(k.pane).BorderWidth(0, 1, 0, 0).BorderColor(k.line).Label("Items")
+		Width(listWidth).Shrink(0).Padding(6, 8, 6+footerHeight, 8).ScrollbarInsets(0, 0, footerHeight, 0).
+		Background(k.pane).BorderWidth(0, 1, 0, 0).BorderColor(k.line).Label("Items")
 	list.Children(func() {
 		if len(a.rows) > 0 {
 			return
@@ -191,7 +201,15 @@ func (a *app) itemList(c *ui.Context, k ink) {
 func (a *app) rowView(c *ui.Context, k ink, i int) {
 	r := a.rows[i]
 	if r.header != "" {
-		ui.Row(c).Padding(10, 10, 4, 10).Background(k.pane).Children(func() {
+		// The header of the section on top pins over the rows, which blur
+		// under it; over the window's material, it tints nothing more.
+		head := ui.Row(c).Padding(10, 10, 4, 10)
+		if k.vibrant {
+			head.Material(glass.Blur{Radius: 10})
+		} else {
+			head.Background(k.pane)
+		}
+		head.Children(func() {
 			ui.Text(c, strings.ToUpper(r.header)).FontSize(10.5).FontWeight(650).LetterSpacing(0.4).TextColor(k.faint)
 		})
 		return
@@ -291,8 +309,22 @@ func (a *app) footer(c *ui.Context, k ink) {
 			keycap(c, k, h, label)
 		}
 	}
-	a.dragHandle(ui.Row(c).Height(36).Padding(0, 14).Gap(14).AlignItems(ui.Center).BorderWidth(1, 0, 0, 0).BorderColor(k.line).
-		Background(k.pane).Clip()).Children(func() {
+	// What scrolls under the footer frosts, as content under a bar does on
+	// macOS 26. Over the window's material, what is under it is mostly
+	// transparent, which a blur can't hide: the bar is tinted there, and
+	// what scrolls to it fades into it, as under macOS's soft scroll edge.
+	edge := ui.Box(c.Key("footer-edge")).Absolute().Left(0).Right(0).Bottom(0).PassThrough()
+	if k.vibrant {
+		edge.Height(footerHeight + 12).Material(glass.ScrollEdge{Bottom: true, Background: k.chrome})
+	} else {
+		edge.Height(footerHeight).Material(glass.ScrollEdge{Hard: true, Bottom: true, Background: k.chrome})
+	}
+	bar := ui.Row(c.Key("footer")).Absolute().Left(0).Right(0).Bottom(0).Height(footerHeight).
+		Padding(0, 14).Gap(14).AlignItems(ui.Center).Clip()
+	if k.vibrant {
+		bar.Background(k.chrome).BorderWidth(1, 0, 0, 0).BorderColor(k.line)
+	}
+	a.dragHandle(bar).Children(func() {
 		if a.flashing(c) {
 			ui.Icon(c, iconCheck).FontSize(13).TextColor(k.okay)
 			ui.Text(c, a.flash).FontSize(12).TextColor(k.text).SingleLine().Shrink(1)
@@ -349,7 +381,11 @@ func (a *app) footer(c *ui.Context, k ink) {
 func (a *app) details(c *ui.Context, k ink, it *bw.Item, own bool) {
 	// Holding Option peeks at every secret field.
 	peek := c.Modifiers()&ui.Alt != 0 && !it.Reprompt
-	ui.Scroll(c.Key("detail-"+it.ID)).Fill().Padding(18, 18, 16, 18).Gap(16).Children(func() {
+	bottom := float32(16)
+	if !own {
+		bottom += footerHeight // under the footer
+	}
+	ui.Scroll(c.Key("detail-"+it.ID)).Fill().Padding(18, 18, bottom, 18).ScrollbarInsets(0, 0, bottom-16, 0).Gap(16).Children(func() {
 		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
 			avatar(c, k, it.Name, int(it.Type), 44)
 			ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Gap(3).Children(func() {
@@ -642,7 +678,7 @@ func (a *app) largeTypeView(c *ui.Context, k ink) {
 	ui.Box(c.Key("large-backdrop")).Absolute().Top(0).Left(0).Right(0).Bottom(0).Radius(radius).
 		Background(ui.RGBA(0, 0, 0, 0.45)).OnClick(func() { a.large = nil })
 	ui.Column(c.Key("large")).Absolute().Top(40).Left(30).Right(30).Bottom(40).Center().Children(func() {
-		ui.Column(c).Padding(18, 22).Gap(14).Radius(14).Background(k.bg).MaxWidth(windowWidth-60).
+		ui.Column(c).Padding(18, 22).Gap(14).Radius(14).Background(k.raised).MaxWidth(windowWidth-60).
 			Shadow(0, 10, 40, 0, ui.RGBA(0, 0, 0, 0.35)).Children(func() {
 			ui.Row(c).Gap(12).Children(func() {
 				ui.Text(c, lt.item+" · "+lt.label).FontSize(12).TextColor(k.muted).SingleLine().Grow(1).Shrink(1)
@@ -679,7 +715,7 @@ func (a *app) confirmView(c *ui.Context, k ink) {
 	open := true
 	ui.DialogBase(c.Key("confirm"), &open, func(backdrop, panel ui.Element) {
 		backdrop.Background(ui.RGBA(0, 0, 0, 0.25))
-		panel.Width(340).Padding(18).Gap(12).Radius(14).Background(k.bg).Shadow(0, 8, 30, 0, ui.RGBA(0, 0, 0, 0.3))
+		panel.Width(340).Padding(18).Gap(12).Radius(14).Background(k.raised).Shadow(0, 8, 30, 0, ui.RGBA(0, 0, 0, 0.3))
 		panel.Children(func() {
 			ui.Text(c, "Enter your master password").FontSize(15).FontWeight(650)
 			name := ""

@@ -23,6 +23,11 @@ type ink struct {
 	bg, pane, card     ui.Color
 	danger, warn, okay ui.Color
 	selected, selMuted ui.Color
+	// chrome is under the bars, raised under what floats over the
+	// window: dialogs, menus, Large Type.
+	chrome, raised ui.Color
+	// vibrant is whether the window shows a material.
+	vibrant bool
 }
 
 func inkOf(t *ui.Theme) ink {
@@ -53,6 +58,25 @@ func inkOf(t *ui.Theme) ink {
 	}
 	k.selected = k.accent
 	k.selMuted = k.onAccent.Alpha(0.78)
+	k.chrome, k.raised = k.bg, k.bg
+	return k
+}
+
+// over makes k the colors over the window's material: tints, where solid
+// colors would hide it.
+func (k ink) over(dark bool) ink {
+	// The panes show the material as it is, and the bars mostly hide what
+	// scrolls under them, frosted, as the material can't be laid over it.
+	k.bg, k.pane, k.vibrant = ui.Transparent, ui.Transparent, true
+	if dark {
+		k.card = ui.RGBA(255, 255, 255, 0.06)
+		k.chrome = ui.RGBA(30, 31, 34, 0.85)
+		k.raised = ui.RGBA(38, 39, 42, 0.97)
+	} else {
+		k.card = ui.RGBA(255, 255, 255, 0.5)
+		k.chrome = ui.RGBA(250, 250, 252, 0.85)
+		k.raised = ui.RGBA(255, 255, 255, 0.97)
+	}
 	return k
 }
 
@@ -75,12 +99,18 @@ func (a *app) view(c *ui.Context) {
 	c.SetTheme(theme(c.Theme()))
 	t := c.Theme()
 	k := inkOf(t)
+	if c.Vibrancy() {
+		k = k.over(t.Dark)
+	}
 	c.Root().Background(ui.Transparent)
 
 	a.windowKeys(c)
 
 	// The panel's shadow outlines it with a hairline: no border of its own.
-	box := ui.Column(c).Fill().FontSize(13).TextColor(k.text).Background(k.bg).Radius(radius).Clip()
+	box := ui.Column(c).Fill().FontSize(13).TextColor(k.text).Radius(radius).Clip()
+	if !c.Vibrancy() {
+		box.Background(k.bg)
+	}
 	box.Children(func() {
 		switch {
 		case !a.configured() || a.page == pageSetup:

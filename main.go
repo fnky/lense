@@ -98,6 +98,11 @@ func (s *shell) ready() {
 			s.win.Focus()
 		}
 	}
+	a.applyMaterial = func() {
+		if s.win != nil {
+			s.applyMaterial(s.win)
+		}
+	}
 	s.content = ui.View(a.view)
 
 	s.tray, err = mygo.NewTray(mygo.TrayOptions{
@@ -220,6 +225,7 @@ func (s *shell) show() {
 		Page: mygo.PageOptions{DevTools: mygo.DevToolsDisabled},
 	})
 	w.SetPosition(x, y)
+	s.applyMaterial(w)
 	w.OnClose(func(e *mygo.CloseEvent) {
 		// Like Spotlight, it goes as the user goes elsewhere, but not to
 		// the prompts of Touch ID.
@@ -244,6 +250,17 @@ func (s *shell) show() {
 	}
 	a.shown()
 	s.redraw()
+}
+
+// applyMaterial shows the material chosen behind the window's content, its
+// corners rounded as the content's, or none.
+func (s *shell) applyMaterial(w *mygo.Window) {
+	if !s.a.cfg.translucent() {
+		w.SetVibrancy(mygo.VibrancyNone)
+		return
+	}
+	w.SetVibrancy(mygo.Vibrancy(s.a.cfg.Material))
+	macos.RoundMaterial(w.NativeHandle(), radius)
 }
 
 // hide closes the window: the keyboard goes back to the app the user was

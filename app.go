@@ -195,6 +195,8 @@ type app struct {
 	// or the desktop app's prompt. refocus gives it the keyboard back.
 	holdOpen int
 	refocus  func()
+	// applyMaterial shows the material chosen behind the window.
+	applyMaterial func()
 
 	// Settings: the key of an action being recorded, by its ID, and which
 	// of its keys (one past them to add one).
@@ -209,22 +211,23 @@ type app struct {
 
 func newApp(cfg config, desk desktop, sys system) *app {
 	a := &app{
-		cfg:         cfg,
-		now:         time.Now,
-		post:        func(fn func()) { fn() },
-		spawn:       func(fn func()) { fn() },
-		saveCfg:     func(config) {},
-		sys:         sys,
-		desk:        desk,
-		onLock:      func() {},
-		onUnlock:    func() {},
-		refocus:     func() {},
-		setShortcut: func(string) error { return nil },
-		exit:        func() {},
-		sel:         -1,
-		locked:      true,
-		reveal:      map[string]bool{},
-		reprompted:  map[string]bool{},
+		cfg:           cfg,
+		now:           time.Now,
+		post:          func(fn func()) { fn() },
+		spawn:         func(fn func()) { fn() },
+		saveCfg:       func(config) {},
+		sys:           sys,
+		desk:          desk,
+		onLock:        func() {},
+		onUnlock:      func() {},
+		refocus:       func() {},
+		applyMaterial: func() {},
+		setShortcut:   func(string) error { return nil },
+		exit:          func() {},
+		sel:           -1,
+		locked:        true,
+		reveal:        map[string]bool{},
+		reprompted:    map[string]bool{},
 	}
 	a.list.Key = func(i int) any {
 		if i < len(a.rows) {
