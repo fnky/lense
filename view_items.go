@@ -28,9 +28,8 @@ func (a *app) itemsView(c *ui.Context, k ink) {
 		a.header(c, k)
 		// The list and the details go down to the window's bottom, and
 		// scroll under the footer, which floats over them.
-		body := ui.Box(c.Key("body")).Grow(1).MinHeight(0)
-		a.listOff = a.listBand.offset(c, body)
-		body.Children(func() {
+		a.listOff = a.listBand.offset(c)
+		ui.Box(c.Key("body")).Grow(1).MinHeight(0).Children(func() {
 			ui.Row(c).Fill().AlignItems(ui.Stretch).Children(func() {
 				a.itemList(c, k)
 				ui.Column(c).Grow(1).Shrink(1).MinWidth(0).Children(func() {
@@ -126,7 +125,7 @@ func (a *app) vaultMenu(c *ui.Context, k ink) {
 		Label("Vaults")
 	panel.Children(func() {
 		view := a.stretchy(ui.Scroll(c.Key("vault-scroll")), &a.vaultBand)
-		off := a.vaultBand.offset(c, view)
+		off := a.vaultBand.offset(c)
 		view.Children(func() {
 			ui.Column(c).Gap(1).Translate(0, off).Children(func() {
 				for _, v := range a.visibleVaults() {
@@ -448,7 +447,7 @@ func (a *app) details(c *ui.Context, k ink, it *bw.Item, own bool) {
 	}
 	b.show(it.ID)
 	view := a.stretchy(ui.Scroll(c.Key("detail-"+it.ID)).Fill().ScrollbarInsets(0, 0, bottom-16, 0), b)
-	off := b.offset(c, view)
+	off := b.offset(c)
 	view.Children(func() {
 		ui.Column(c).Padding(18, 18, bottom, 18).Gap(16).Translate(0, off).Children(func() {
 			ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {

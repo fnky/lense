@@ -21,7 +21,7 @@ func (a *app) settingsView(c *ui.Context, k ink) {
 		ui.Text(c, "Settings").FontSize(14).FontWeight(650).Grow(1).TextAlign(ui.Center).Margin(0, 60, 0, 0)
 	})
 	view := a.stretchy(ui.Scroll(c.Key("settings")).Grow(1), &a.settingsBand)
-	off := a.settingsBand.offset(c, view)
+	off := a.settingsBand.offset(c)
 	view.Children(func() {
 		ui.Column(c).Padding(18, 28, 22, 28).Gap(22).Translate(0, off).Children(func() {
 			section(c, k, "Account", func() {

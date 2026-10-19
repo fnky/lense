@@ -1,6 +1,7 @@
 package main
 
 import (
+	"math"
 	"time"
 
 	"bitwarden-mini/internal/macos"
@@ -10,10 +11,9 @@ import (
 
 // band is the rubber band of a scroll view, as macOS's scroll views have:
 // scrolled on past an end of its content with the trackpad, the content
-// goes on, less and less far, and springs back as the fingers lift;
-// scrolling that coasts on after they lift bounces off the end. MyGo's
-// scroll views stop at their ends: the view moves its content by the
-// band's offset.
+// goes on, much less far, and goes back as the fingers lift; scrolling
+// that coasts on after they lift bounces off the end. MyGo's scroll views
+// stop at their ends: the view moves its content by the band's offset.
 type band struct {
 	// at is where the view shows its content (TrackScroll): at an end or
 	// not.
@@ -31,23 +31,39 @@ type band struct {
 	stretched    time.Time
 	// last is when the last event came, for the velocity of the next.
 	last time.Time
-	// kick is the velocity of the scrolling that coasted into an end, which
-	// the next frame bounces the content off it with, and coasting whether
-	// it did: the rest of it moves nothing.
-	kick     float32
-	coasting bool
-	// off is how far the content showed off its place in the last frame,
-	// and size the height of the view then, the band's length.
-	off, size float32
+	// going is whether the content goes back to its place (rebound): from
+	// off by from, at vel DIPs a second, since then. coasting is whether
+	// scrolling coasted into the end, which it bounces off: the rest of it
+	// moves nothing.
+	going, coasting bool
+	from, vel       float32
+	since           time.Time
+	// off is how far the content showed off its place in the last frame.
+	off float32
 }
 
+// The rubber band of AppKit's scroll views, as its functions that WebKit
+// scrolls with too say (_NSElasticDeltaForReboundDelta,
+// _NSElasticDeltaForTimeDelta): the content stretches by a twentieth of
+// how far it is scrolled past the end, and goes back from there as
+// rebound says.
 const (
-	// releaseAfter is how long the fingers are taken to have lifted after
-	// the last event, which has no phases.
-	releaseAfter = 120 * time.Millisecond
-	// settle is how long the content takes to spring back.
-	settle = 450 * time.Millisecond
+	elasticity       = 1.0 / 20
+	reboundRate      = 12.5 // a second
+	reboundAmplitude = 0.31
 )
+
+// releaseAfter is how long the fingers are taken to have lifted after the
+// last event, which has no phases.
+const releaseAfter = 120 * time.Millisecond
+
+// rebound returns how far off its place content is t seconds after it
+// starts back, from off by from at vel DIPs a second away from its place:
+// back at once, decaying, or first further, by about 1% of vel at most,
+// as what coasted into the end bounces.
+func rebound(from, vel float32, t float64) float32 {
+	return float32((float64(from) + reboundAmplitude*float64(vel)*t) * math.Exp(-reboundRate*t))
+}
 
 // show has b be the band of a view showing id: a new one for another.
 func (b *band) show(id string) {
@@ -82,20 +98,19 @@ func (b *band) scroll(ev ui.InputEvent, top, end bool, phase, momentum macos.Pha
 	dt := ev.Time.Sub(b.last)
 	b.last = ev.Time
 	past := ev.DY < 0 && top || ev.DY > 0 && end
-	away := b.off <= -0.5 || b.off >= 0.5
 	if momentum != 0 {
 		switch {
 		case momentum&(macos.PhaseEnded|macos.PhaseCancelled) != 0:
-			took := b.coasting || away
+			took := b.coasting || b.going
 			b.coasting = false
 			return took
-		case b.coasting || b.held || away:
-			// The content springs back: the coasting goes nowhere.
+		case b.coasting || b.held || b.going:
+			// The content goes back: the coasting goes nowhere.
 			return true
 		case past:
 			// Coasting into the end: the content bounces off it.
 			b.coasting = true
-			b.kick = -ev.DY / float32(eventGap(dt).Seconds())
+			b.goBack(ev.Time, -ev.DY/float32(eventGap(dt).Seconds()))
 			return true
 		}
 		return false
@@ -103,13 +118,15 @@ func (b *band) scroll(ev ui.InputEvent, top, end bool, phase, momentum macos.Pha
 	switch {
 	case phase&(macos.PhaseEnded|macos.PhaseCancelled) != 0:
 		held := b.held
-		b.held, b.pull = false, 0
+		if held {
+			b.goBack(ev.Time, 0)
+		}
 		return held
 	case phase&(macos.PhaseBegan|macos.PhaseMayBegin) != 0:
 		b.coasting = false
-		if !b.held && away {
-			// The fingers catch the content springing back.
-			b.held, b.pull = true, unband(b.off, b.size)
+		if b.going {
+			// The fingers catch the content going back.
+			b.going, b.held, b.pull = false, true, b.off/elasticity
 		}
 	}
 	if !b.held && !past {
@@ -125,37 +142,43 @@ func (b *band) scroll(ev ui.InputEvent, top, end bool, phase, momentum macos.Pha
 	return true
 }
 
-// offset returns how far the content shows off its place in this frame,
-// which the view moves it by: as far as the fingers stretch it, springing
-// back once they let go. e is an element of the view that lasts from
-// frame to frame, as tall as it, which animates the offset.
-func (b *band) offset(c *ui.Context, e ui.Element) float32 {
-	const key = "band"
-	if r := e.Bounds(); r.H > 0 {
-		b.size = r.H
+// goBack lets the content go back to its place from where it is, from at,
+// going away from it at vel DIPs a second.
+func (b *band) goBack(at time.Time, vel float32) {
+	from := b.off
+	if b.held {
+		from = b.pull * elasticity
 	}
+	b.going, b.from, b.vel, b.since = true, from, vel, at
+	b.held, b.pull = false, 0
+}
+
+// offset returns how far the content shows off its place in this frame,
+// which the view moves it by: as far as the fingers stretch it, going back
+// once they let go.
+func (b *band) offset(c *ui.Context) float32 {
+	now := c.Now()
 	if b.held && !b.phased {
-		if wait := releaseAfter - c.Now().Sub(b.stretched); wait > 0 {
+		if wait := releaseAfter - now.Sub(b.stretched); wait > 0 {
 			c.After(wait)
 		} else {
-			b.held, b.pull = false, 0
+			b.goBack(b.stretched.Add(releaseAfter), 0)
 		}
 	}
 	switch {
 	case b.held:
-		b.off = e.Jump(key, ui.Rubberband(b.pull, 0, 0, b.size))
-	case b.kick != 0:
-		// Coasting into the end, the content goes on past it, a frame's
-		// way at first, and springs back with the velocity it came with,
-		// which takes it further first, by about a fortieth of it: at most
-		// a quarter of the view.
-		most := 10 * max(b.size, 200)
-		v := min(max(b.kick, -most), most)
-		b.kick = 0
-		e.Jump(key, v/120)
-		b.off = e.Spring(key, 0, ui.SpringOptions{Duration: settle, Velocity: v})
+		b.off = b.pull * elasticity
+	case b.going:
+		t := now.Sub(b.since).Seconds()
+		b.off = rebound(b.from, b.vel, t)
+		// Once past the furthest a bounce goes, it is back within half a DIP.
+		if t >= 1/reboundRate && b.off > -0.5 && b.off < 0.5 {
+			b.going, b.off = false, 0
+		} else {
+			c.AnimationFrame()
+		}
 	default:
-		b.off = e.Spring(key, 0, ui.SpringOptions{Duration: settle})
+		b.off = 0
 	}
 	return b.off
 }
@@ -170,19 +193,4 @@ func eventGap(d time.Duration) time.Duration {
 		return time.Second / 240
 	}
 	return d
-}
-
-// unband returns how far the fingers pull to stretch the content off its
-// place by off, along a band of length size: ui.Rubberband's inverse.
-func unband(off, size float32) float32 {
-	const c = 0.55 // Rubberband's
-	if size <= 0 {
-		return 0
-	}
-	a := min(max(off, -off), 0.99*size)
-	x := a / (c * (1 - a/size))
-	if off < 0 {
-		return -x
-	}
-	return x
 }

@@ -1077,7 +1077,7 @@ func TestRowsFadeUnderThePinnedHeader(t *testing.T) {
 	}
 	h.settle()
 	for range 4 {
-		if !h.a.stretch(&h.a.listBand, pull(30, h.tt.Now())) {
+		if !h.a.stretch(&h.a.listBand, pull(250, h.tt.Now())) {
 			t.Fatal("the list scrolled past its end")
 		}
 		h.tt.Advance(8 * time.Millisecond)
