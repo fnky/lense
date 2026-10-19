@@ -136,6 +136,7 @@ func (a *app) view(c *ui.Context) {
 		}
 	})
 	a.syncBar()
+	a.secureField("panel", a.pwField.Focused(c) || a.confirmH.Focused(c))
 }
 
 // syncBar has the shell show the footer over AppKit's material as Quick

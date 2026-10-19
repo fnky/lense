@@ -439,6 +439,7 @@ func (s *shell) openDetail(id string) {
 	w.OnClosed(func() {
 		delete(s.details, id)
 		delete(a.windowBands, id)
+		a.secureField("item:"+id, false)
 	})
 	s.hide()
 	w.Focus()
@@ -591,7 +592,8 @@ func (m *macSystem) pageURL(ctx context.Context, browser macos.App) string {
 	return u
 }
 
-func (m *macSystem) drag(p dragPhase) { m.s.drag(p) }
+func (m *macSystem) drag(p dragPhase)    { m.s.drag(p) }
+func (m *macSystem) secureInput(on bool) { macos.SecureInput(on) }
 func (m *macSystem) scrollPhase() (phase, momentum macos.Phase) {
 	return macos.ScrollPhase()
 }

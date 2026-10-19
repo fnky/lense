@@ -146,6 +146,7 @@ func (a *app) close() {
 // the passwords shown, Large Type, and the master password given for the
 // items that ask for it. The rest stays as it was for the next time.
 func (a *app) hidden() {
+	a.secureField("panel", false)
 	a.reveal, a.reprompted = map[string]bool{}, map[string]bool{}
 	a.large = nil
 	a.codes, a.shownValues = nil, nil

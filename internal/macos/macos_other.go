@@ -35,6 +35,7 @@ func BarMaterial(nsWindow uintptr, height, radius float64, material int) uintptr
 	return 0
 }
 func ShowBar(view uintptr, show bool) {}
+func SecureInput(on bool)             {}
 
 type Sealed struct{}
 

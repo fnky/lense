@@ -69,6 +69,8 @@ type system interface {
 	// scrollPhase returns the phases of the trackpad's gesture scrolling a
 	// view, as the view takes its event (macos.ScrollPhase).
 	scrollPhase() (phase, momentum macos.Phase)
+	// secureInput turns Secure Event Input on or off (macos.SecureInput).
+	secureInput(on bool)
 }
 
 // sealedSecret is a secret that only Touch ID opens (macos.Sealed).
@@ -167,6 +169,11 @@ type app struct {
 	index  *search.Index
 	locked bool
 	busy   string // an unlock under way: "touch", "password"
+	// secureIn are the windows whose master password field has the
+	// keyboard, and secureOn whether Secure Event Input is on for them
+	// (secureField).
+	secureIn map[string]bool
+	secureOn bool
 	// codes are the one-time passwords shown (code), and shownValues the
 	// secrets shown in the clear, by fieldKey (shownValue): what of the vault
 	// is decrypted, which goes as the window hides or locks.
@@ -566,6 +573,24 @@ func (a *app) lock(hard bool) {
 	a.prob, a.confirm, a.flash = nil, nil, ""
 	a.tried = false
 	a.onLock()
+}
+
+// secureField records whether a master password field has the keyboard
+// in the window win, and keeps Secure Event Input on while one has, as
+// macOS's own password fields do: other apps see none of the keys typed.
+func (a *app) secureField(win string, focused bool) {
+	if focused {
+		if a.secureIn == nil {
+			a.secureIn = map[string]bool{}
+		}
+		a.secureIn[win] = true
+	} else {
+		delete(a.secureIn, win)
+	}
+	if on := len(a.secureIn) > 0; on != a.secureOn {
+		a.secureOn = on
+		a.sys.secureInput(on)
+	}
 }
 
 // sealKey seals the user key of v with the Secure Enclave, for Touch ID

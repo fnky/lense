@@ -122,6 +122,8 @@ type fakeSystem struct {
 	phase, momentum macos.Phase
 	// closed is told the window closed, as hide closes it.
 	closed func()
+	// secure is how Secure Event Input was turned, in turn.
+	secure []bool
 }
 
 func (s *fakeSystem) copy(text string, secret bool) {
@@ -181,6 +183,7 @@ func (s *fakeSystem) fill(_ context.Context, _ macos.App, req fillRequest) error
 }
 func (s *fakeSystem) pageURL(_ context.Context, b macos.App) string { return s.pageURLs[b.BundleID] }
 func (s *fakeSystem) fieldFocused(macos.App) bool                   { return s.field }
+func (s *fakeSystem) secureInput(on bool)                           { s.secure = append(s.secure, on) }
 func (s *fakeSystem) drag(p dragPhase)                              { s.drags = append(s.drags, p) }
 func (s *fakeSystem) scrollPhase() (macos.Phase, macos.Phase)       { return s.phase, s.momentum }
 
@@ -1518,5 +1521,25 @@ func TestSecretsDecryptOnlyAsTheyShow(t *testing.T) {
 	}
 	if _, err := it.Login.Password.Reveal(); !errors.Is(err, bw.ErrLocked) {
 		t.Fatalf("revealed, locked: %v", err)
+	}
+}
+
+func TestSecureInputWhileTheMasterPasswordIsTyped(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.settle()
+	if len(h.sys.secure) != 0 {
+		t.Fatalf("secure input %v before the field has the keyboard", h.sys.secure)
+	}
+	h.click("Master password")
+	if !slices.Equal(h.sys.secure, []bool{true}) {
+		t.Fatalf("secure input %v as the field has the keyboard", h.sys.secure)
+	}
+	h.settle()
+	if len(h.sys.secure) != 1 {
+		t.Fatalf("secure input turned %v times", h.sys.secure)
+	}
+	h.unlock()
+	if !slices.Equal(h.sys.secure, []bool{true, false}) {
+		t.Fatalf("secure input %v once unlocked", h.sys.secure)
 	}
 }

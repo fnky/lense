@@ -930,4 +930,5 @@ func (a *app) detailWindow(c *ui.Context, id string) {
 	if a.confirm != nil && a.confirmItem == id {
 		a.confirmView(c, k)
 	}
+	a.secureField("item:"+id, a.confirm != nil && a.confirmItem == id && a.confirmH.Focused(c))
 }
