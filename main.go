@@ -275,6 +275,7 @@ func (s *shell) drag(p dragPhase) {
 	case dragStart:
 		x, y := w.Position()
 		s.moving = windowDrag{active: true, from: mygo.Screen.CursorScreenPoint(), x: x, y: y}
+		s.guides = guides{}
 	case dragMove:
 		if !s.moving.active {
 			return
@@ -283,6 +284,7 @@ func (s *shell) drag(p dragPhase) {
 		d := mygo.Screen.DisplayNearestPoint(cur)
 		work := rect{d.WorkArea.X, d.WorkArea.Y, d.WorkArea.Width, d.WorkArea.Height}
 		x, y, g := snap(s.moving.x+cur.X-s.moving.from.X, s.moving.y+cur.Y-s.moving.from.Y, windowWidth, windowHeight, work)
+		g.carry(s.guides, time.Now())
 		w.SetPosition(x, y)
 		s.showGuides(g)
 	case dragEnd:

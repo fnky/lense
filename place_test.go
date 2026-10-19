@@ -3,6 +3,7 @@ package main
 import (
 	"slices"
 	"testing"
+	"time"
 )
 
 func TestSnapGuides(t *testing.T) {
@@ -51,5 +52,35 @@ func TestSnapGuides(t *testing.T) {
 	_, y, g = snap(376, home+400, w, h, work)
 	if g.vAlpha != 1 || g.hAlpha != 0 || y != home+400 {
 		t.Errorf("low: %+v", g)
+	}
+}
+
+func TestGuidesFlashAsTheyAreSnappedTo(t *testing.T) {
+	if flash(0) != 1 || flash(100*time.Millisecond) != 1 || flash(time.Second) != 0 {
+		t.Errorf("flash %v %v %v", flash(0), flash(100*time.Millisecond), flash(time.Second))
+	}
+	if k := flash(375 * time.Millisecond); k <= 0 || k >= 1 {
+		t.Errorf("halfway %v", k)
+	}
+	work := rect{0, 25, 1512, 920}
+	t0 := time.Now()
+	_, _, g := snap(376, 300, windowWidth, windowHeight, work)
+	g.carry(guides{}, t0)
+	if g.since[376] != t0 || g.since[1136] != t0 {
+		t.Fatalf("since %v", g.since)
+	}
+	// Still on them, the window keeps when it snapped; off them, it
+	// snaps anew later.
+	_, _, g2 := snap(378, 300, windowWidth, windowHeight, work)
+	g2.carry(g, t0.Add(time.Second))
+	if g2.since[376] != t0 {
+		t.Errorf("since %v", g2.since)
+	}
+	_, _, g3 := snap(500, 300, windowWidth, windowHeight, work)
+	g3.carry(g2, t0.Add(2*time.Second))
+	_, _, g4 := snap(376, 300, windowWidth, windowHeight, work)
+	g4.carry(g3, t0.Add(3*time.Second))
+	if g4.since[376] != t0.Add(3*time.Second) {
+		t.Errorf("snapped anew at %v", g4.since[376])
 	}
 }

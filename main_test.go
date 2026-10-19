@@ -964,15 +964,21 @@ func TestDraggingTheWindow(t *testing.T) {
 func TestGuidesSnapshot(t *testing.T) {
 	work := rect{0, 25, 1512, 920}
 	x, y, g := snap(380, 25+(920-windowHeight)/5+6, windowWidth, windowHeight, work)
-	tt := ui.NewTester(func(c *ui.Context) {
-		c.Root().Background(ui.RGB(40, 44, 52))
-		ui.Box(c).Fill().Draw(func(p *ui.Painter, r ui.Rect) {
-			drawGuides(p, r, g, ui.Hex("#3D7FF0"))
-			p.Fill(ui.Rect{X: float32(x - work.X), Y: float32(y - work.Y), W: windowWidth, H: windowHeight}, ui.RGBA(255, 255, 255, 0.9), radius)
-		})
-	}, work.W, work.H)
-	snapshot(t, tt, "guides")
 	if x != 376 || !g.snapY {
-		t.Errorf("snapped to %d,%d %+v", x, y, g)
+		t.Fatalf("snapped to %d,%d %+v", x, y, g)
+	}
+	for _, tc := range []struct {
+		name string
+		ago  time.Duration
+	}{{"guides-snapped", 0}, {"guides-settled", time.Second}} {
+		g.carry(guides{}, time.Now().Add(-tc.ago))
+		tt := ui.NewTester(func(c *ui.Context) {
+			c.Root().Background(ui.RGB(40, 44, 52))
+			ui.Box(c).Fill().Draw(func(p *ui.Painter, r ui.Rect) {
+				drawGuides(p, r, g, ui.Hex("#3D7FF0"))
+				p.Fill(ui.Rect{X: float32(x - work.X), Y: float32(y - work.Y), W: windowWidth, H: windowHeight}, ui.RGBA(255, 255, 255, 0.9), radius)
+			})
+		}, work.W, work.H)
+		snapshot(t, tt, tc.name)
 	}
 }

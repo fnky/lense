@@ -2,6 +2,7 @@ package main
 
 import (
 	"strconv"
+	"time"
 )
 
 // rect is a rectangle of the screen, in DIPs.
@@ -72,6 +73,42 @@ type guides struct {
 	hAlpha float64 // how much the top shows
 	snapX  []int   // the edges the window is on
 	snapY  bool    // whether its top is on the top
+	// since is when the window snapped to each edge it is on, and topSince
+	// to the top: the guides flash as it does.
+	since    map[int]time.Time
+	topSince time.Time
+}
+
+// carry keeps when the window snapped to the guides it was on already, and
+// says it snapped now to the others it is on.
+func (g *guides) carry(prev guides, now time.Time) {
+	g.since = map[int]time.Time{}
+	for _, x := range g.snapX {
+		if t, ok := prev.since[x]; ok {
+			g.since[x] = t
+		} else {
+			g.since[x] = now
+		}
+	}
+	switch {
+	case g.snapY && prev.snapY:
+		g.topSince = prev.topSince
+	case g.snapY:
+		g.topSince = now
+	}
+}
+
+// flash is how blue a guide is a while d after the window snapped to it:
+// fully at first, then white again after about half a second.
+func flash(d time.Duration) float32 {
+	const hold, fade = 150 * time.Millisecond, 450 * time.Millisecond
+	switch {
+	case d < hold:
+		return 1
+	case d >= hold+fade:
+		return 0
+	}
+	return 1 - float32(d-hold)/float32(fade)
 }
 
 // snapDistance is how near a line an edge snaps to it.
