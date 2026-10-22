@@ -12,8 +12,17 @@ const (
 	policyBiometricsOrWatch = 4 // LAPolicyDeviceOwnerAuthenticationWithBiometricsOrWatch
 )
 
-// laError turns an LAError code into one of this package's errors.
-func laError(code int) error {
+// laNotInteractive is LocalAuthentication's answer when it would have to
+// ask, and may not: LAErrorNotInteractive.
+const laNotInteractive = -1004
+
+// laError turns an error of LocalAuthentication into one of this
+// package's errors, or an AuthError for any other.
+func laError(nsErr objc.ID) error {
+	if nsErr == 0 {
+		return ErrAuthFailed
+	}
+	code := objc.Send[int](nsErr, sel("code"))
 	switch code {
 	case -2, -4, -9: // user, system or app cancel
 		return ErrCanceled
@@ -26,7 +35,9 @@ func laError(code int) error {
 	case -1:
 		return ErrAuthFailed
 	}
-	return ErrAuthFailed
+	var reason string
+	withPool(func() { reason = goString(objc.Send[objc.ID](nsErr, sel("localizedDescription"))) })
+	return &AuthError{Code: code, Reason: reason}
 }
 
 // policy returns the policy this Mac can evaluate, or an error.
@@ -39,7 +50,7 @@ func policy(ctx objc.ID) (int, error) {
 		}
 	}
 	if nsErr != 0 {
-		return 0, laError(objc.Send[int](nsErr, sel("code")))
+		return 0, laError(nsErr)
 	}
 	return 0, ErrBiometricsUnavailable
 }
@@ -84,11 +95,7 @@ func Authenticate(reason, fallback string) error {
 				done <- nil
 				return
 			}
-			code := -1
-			if nsErr != 0 {
-				code = objc.Send[int](nsErr, sel("code"))
-			}
-			done <- laError(code)
+			done <- laError(nsErr)
 		})
 		ctx.Send(sel("evaluatePolicy:localizedReason:reply:"), p, nsString(reason), block)
 	})

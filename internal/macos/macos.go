@@ -1,6 +1,9 @@
 package macos
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 // App is a running app.
 type App struct {
@@ -47,6 +50,17 @@ var (
 	// as when the fingerprints of Touch ID changed.
 	ErrSealedGone = errors.New("the Secure Enclave no longer opens the secret")
 )
+
+// AuthError is an answer of LocalAuthentication that none of the errors
+// above names: its code, and what it says of it.
+type AuthError struct {
+	Code   int
+	Reason string
+}
+
+func (e *AuthError) Error() string {
+	return fmt.Sprintf("Touch ID: %s (%d)", e.Reason, e.Code)
+}
 
 // BitwardenBundleID is the bundle identifier of the Bitwarden desktop app.
 const BitwardenBundleID = "com.bitwarden.desktop"

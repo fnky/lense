@@ -460,6 +460,13 @@ func TestUnlockWithTouchID(t *testing.T) {
 	if h.a.unlocked() || h.a.lockProb != nil || h.a.sealed == nil {
 		t.Fatalf("canceled: unlocked %v, problem %+v", h.a.unlocked(), h.a.lockProb)
 	}
+	// Touch ID failing otherwise says why, and keeps the key to try again.
+	h.sys.authErr = &macos.AuthError{Code: -1009, Reason: "Operation is not allowed."}
+	h.click("Unlock with Touch ID")
+	if h.a.unlocked() || h.a.sealed == nil {
+		t.Fatalf("failed: unlocked %v, kept %v", h.a.unlocked(), h.a.sealed != nil)
+	}
+	h.has("Touch ID didn't unlock", "Touch ID: Operation is not allowed. (-1009). Try again, or enter your master password.")
 	h.sys.authErr = macos.ErrSealedGone
 	h.click("Unlock with Touch ID")
 	if h.a.unlocked() || h.a.sealed != nil {

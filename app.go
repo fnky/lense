@@ -694,6 +694,8 @@ func (a *app) unlockTouchID(launch bool) {
 					a.lockProb = &problem{title: "Touch ID changed", detail: "Its fingerprints changed since Bitwarden Mini locked. Unlock with Bitwarden, or enter your master password."}
 				case errors.Is(err, macos.ErrBiometricsLockout), errors.Is(err, macos.ErrAuthFailed):
 					a.lockProb = &problem{title: err.Error(), detail: "Enter your master password instead."}
+				case errors.As(err, new(*macos.AuthError)):
+					a.lockProb = &problem{title: "Touch ID didn't unlock", detail: err.Error() + ". Try again, or enter your master password."}
 				default:
 					// The key no longer opens the vault: Bitwarden's keys
 					// changed meanwhile.

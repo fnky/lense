@@ -29,3 +29,22 @@ func TestSeal(t *testing.T) {
 		t.Fatal("sealed nothing")
 	}
 }
+
+// Touch ID can allow what opening a sealed secret takes: forbidden to
+// ask, LocalAuthentication says it would have to, where it refuses at once
+// an operation the key doesn't allow.
+func TestSealAsksForWhatOpens(t *testing.T) {
+	s, err := Seal([]byte("0123456789abcdef0123456789abcdef"))
+	if errors.Is(err, ErrBiometricsUnavailable) {
+		t.Skip("no Secure Enclave")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Release()
+	withPool(func() { s.ctx.Send(sel("setInteractionNotAllowed:"), true) })
+	var ae *AuthError
+	if err := s.authorize("test", "fallback"); !errors.As(err, &ae) || ae.Code != laNotInteractive {
+		t.Fatalf("authorize: %v", err)
+	}
+}

@@ -49,11 +49,14 @@ var (
 )
 
 // The flags of the key's access control: Touch ID, with the fingerprints
-// enrolled as the secret was sealed, to use the private key.
+// enrolled as the secret was sealed, to use the private key. The Secure
+// Enclave decrypts ECIES by a key exchange, the one use of the key its
+// access control lets Touch ID allow: allowing a decryption fails, at
+// once, as an operation not allowed.
 const (
 	accessBiometryCurrentSet = 1 << 3
 	accessPrivateKeyUsage    = 1 << 30
-	laUseKeyDecrypt          = 4 // LAAccessControlOperationUseKeyDecrypt
+	laUseKeyKeyExchange      = 5 // LAAccessControlOperationUseKeyKeyExchange
 )
 
 func loadSecurity() error {
@@ -188,29 +191,11 @@ func (s *Sealed) Open(reason, fallback string) ([]byte, error) {
 	if s == nil || s.priv == 0 {
 		return nil, ErrSealedGone
 	}
-	done := make(chan error, 1)
-	var block objc.Block
-	withPool(func() {
-		s.ctx.Send(sel("setLocalizedFallbackTitle:"), nsString(fallback))
-		block = objc.NewBlock(func(_ objc.Block, success bool, nsErr objc.ID) {
-			if success {
-				done <- nil
-				return
-			}
-			code := -1
-			if nsErr != 0 {
-				code = objc.Send[int](nsErr, sel("code"))
-			}
-			done <- laError(code)
-		})
-		s.ctx.Send(sel("evaluateAccessControl:operation:localizedReason:reply:"), s.access, laUseKeyDecrypt, nsString(reason), block)
-	})
-	err := <-done
-	block.Release()
-	if err != nil {
+	if err := s.authorize(reason, fallback); err != nil {
 		return nil, err
 	}
 	var out []byte
+	var err error
 	withPool(func() {
 		var cfErr uintptr
 		plain := secDecrypt(s.priv, kECIES, s.data, &cfErr)
@@ -227,6 +212,27 @@ func (s *Sealed) Open(reason, fallback string) ([]byte, error) {
 		releaseRef(plain)
 	})
 	return out, err
+}
+
+// authorize asks for Touch ID, which lets the key's context decrypt the
+// secret, without asking again.
+func (s *Sealed) authorize(reason, fallback string) error {
+	done := make(chan error, 1)
+	var block objc.Block
+	withPool(func() {
+		s.ctx.Send(sel("setLocalizedFallbackTitle:"), nsString(fallback))
+		block = objc.NewBlock(func(_ objc.Block, success bool, nsErr objc.ID) {
+			if success {
+				done <- nil
+				return
+			}
+			done <- laError(nsErr)
+		})
+		s.ctx.Send(sel("evaluateAccessControl:operation:localizedReason:reply:"), s.access, laUseKeyKeyExchange, nsString(reason), block)
+	})
+	err := <-done
+	block.Release()
+	return err
 }
 
 // Release forgets the key, which nothing can open the secret with then.
