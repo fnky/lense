@@ -191,9 +191,10 @@ type app struct {
 	lockProb  *problem
 	pwField   ui.Handle
 	// tried is whether Touch ID was tried as the window showed, locked;
-	// showing whether it shows.
-	tried   bool
-	showing bool
+	// asked whether the window showing is one the user asked for, which
+	// tries it.
+	tried bool
+	asked bool
 
 	// The items.
 	query  string
@@ -657,16 +658,20 @@ func (a *app) touchIDOffered() bool {
 	return ok && acc.BiometricUnlock
 }
 
-// shown is called as the window shows: locked, it asks for Touch ID once.
-func (a *app) shown() {
-	a.showing = true
+// shown is called as the window shows. Locked, it asks for Touch ID once
+// when the user asked for the window (ask): not as it shows by itself, as
+// the app opens.
+func (a *app) shown(ask bool) {
+	if ask {
+		a.asked = true
+	}
 	a.askTouchID()
 }
 
-// askTouchID asks for Touch ID once as the window shows, locked, as soon as
-// the desktop app's data is read.
+// askTouchID asks for Touch ID once as the window the user asked for
+// shows, locked, as soon as the desktop app's data is read.
 func (a *app) askTouchID() {
-	if a.showing && a.loaded && a.configured() && !a.unlocked() && !a.tried && a.busy == "" && a.lockProb == nil && a.page == pageItems {
+	if a.asked && a.loaded && a.configured() && !a.unlocked() && !a.tried && a.busy == "" && a.lockProb == nil && a.page == pageItems {
 		a.tried = true
 		if a.touchIDOffered() {
 			a.unlockTouchID(false)

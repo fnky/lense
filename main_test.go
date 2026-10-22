@@ -422,7 +422,7 @@ func TestUnlockWithPassword(t *testing.T) {
 
 func TestUnlockWithTouchID(t *testing.T) {
 	h := newHarness(t, nil, true)
-	h.a.shown() // the window shows, locked: it asks the desktop app
+	h.a.shown(true) // the window the user asked for shows, locked: it asks the desktop app
 	h.settle()
 	if h.desk.unlocks != 1 || !h.a.unlocked() {
 		t.Fatalf("unlocks %d, problem %+v", h.desk.unlocks, h.a.lockProb)
@@ -494,10 +494,10 @@ func TestUnlockWithTouchID(t *testing.T) {
 
 func TestShowsWhileLoading(t *testing.T) {
 	h := newHarness(t, nil, true)
-	// The app starts: its window shows before it read the desktop app's
+	// The app opens: its window shows before it read the desktop app's
 	// data, which the locked window waits for, its buttons off.
 	h.a.store, h.a.loaded = nil, false
-	h.a.shown()
+	h.a.shown(false)
 	h.settle()
 	h.has("Bitwarden Mini is locked", "Loading…", "Unlock with Touch ID")
 	snapshot(t, h.tt, "locked-loading")
@@ -508,15 +508,26 @@ func TestShowsWhileLoading(t *testing.T) {
 	if h.desk.unlocks != 0 || h.a.busy != "" || h.a.lockProb != nil {
 		t.Fatalf("unlocks %d, busy %q, problem %+v while loading", h.desk.unlocks, h.a.busy, h.a.lockProb)
 	}
-	// Read, Touch ID unlocks, as the window showed.
+	// Read, it doesn't ask for Touch ID: the user didn't ask for the
+	// window.
 	h.a.password = ""
+	h.a.reload()
+	h.settle()
+	if h.tt.HasText("Loading…") || h.desk.unlocks != 0 || h.a.unlocked() {
+		t.Fatalf("loading %v, unlocks %d", h.tt.HasText("Loading…"), h.desk.unlocks)
+	}
+	// Asked for, while it loads, the window asks once it read.
+	h.a.hidden()
+	h.a.store, h.a.loaded = nil, false
+	h.a.shown(true)
+	h.settle()
+	if h.desk.unlocks != 0 {
+		t.Fatal("asked for Touch ID while loading")
+	}
 	h.a.reload()
 	h.settle()
 	if h.desk.unlocks != 1 || !h.a.unlocked() {
 		t.Fatalf("unlocks %d, problem %+v", h.desk.unlocks, h.a.lockProb)
-	}
-	if h.tt.HasText("Loading…") {
-		t.Error("still loading")
 	}
 }
 
@@ -1513,7 +1524,7 @@ func TestTouchIDOpensBitwarden(t *testing.T) {
 	// for it: the window says it isn't open.
 	h := newHarness(t, nil, true)
 	h.desk.notRun, h.desk.starting = true, 3
-	h.a.shown()
+	h.a.shown(true)
 	h.settle()
 	if h.desk.launched != 0 || h.a.unlocked() {
 		t.Fatalf("launched %d, unlocked %v", h.desk.launched, h.a.unlocked())

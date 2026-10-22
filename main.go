@@ -170,7 +170,7 @@ func (s *shell) ready() {
 func (s *shell) menu() *mygo.Menu {
 	a := s.a
 	return mygo.NewMenu([]*mygo.MenuItem{
-		{Label: "Open Bitwarden Mini", Accelerator: s.shortcut, Click: func(*mygo.MenuItem, *mygo.Window) { s.show() }},
+		{Label: "Open Bitwarden Mini", Accelerator: s.shortcut, Click: func(*mygo.MenuItem, *mygo.Window) { s.summon() }},
 		{Label: "Lock", Disabled: !a.unlocked(), Click: func(*mygo.MenuItem, *mygo.Window) { a.lock(false); s.redraw() }},
 		mygo.Separator(),
 		{Label: "Open Bitwarden", Click: func(*mygo.MenuItem, *mygo.Window) { a.openBitwarden() }},
@@ -217,16 +217,25 @@ func (s *shell) toggle() {
 		s.hide()
 		return
 	}
-	s.show()
+	s.summon()
 }
 
-// show shows the window where it was last on the display the pointer is
+// summon shows the window as the user asked for it, by its shortcut or the
+// menu bar: locked, it asks for Touch ID.
+func (s *shell) summon() { s.open(true) }
+
+// show shows the window, as the app opens, or has something to show: it
+// asks for nothing.
+func (s *shell) show() { s.open(false) }
+
+// open shows the window where it was last on the display the pointer is
 // on, as it was: with the search and the item chosen, unless the vault
-// locked meanwhile.
-func (s *shell) show() {
+// locked meanwhile. Locked, it asks for Touch ID when ask.
+func (s *shell) open(ask bool) {
 	a := s.a
 	if s.win != nil {
 		s.win.Focus()
+		a.shown(ask)
 		return
 	}
 	if fa := macos.FrontmostApp(); fa.PID != s.ownPID {
@@ -276,7 +285,7 @@ func (s *shell) show() {
 	if a.unlocked() && a.page == pageItems {
 		a.search.Focus()
 	}
-	a.shown()
+	a.shown(ask)
 	s.redraw()
 }
 
