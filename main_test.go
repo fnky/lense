@@ -951,6 +951,26 @@ func TestDetailsKeys(t *testing.T) {
 	}
 }
 
+func TestClicksLeaveTheKeyboardToTheSearch(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.unlock()
+	h.tt.Type("g")
+	h.settle()
+	h.click("GitHub") // a result
+	h.tt.Type("i")
+	h.settle()
+	if h.a.query != "gi" {
+		t.Fatalf("typed %q after a result was clicked", h.a.query)
+	}
+	h.key(0, ui.KeyRight)
+	h.click("username") // a field, which it copies
+	h.tt.Type("t")
+	h.settle()
+	if h.sys.last() != "ada" || h.a.query != "git" {
+		t.Fatalf("copied %q, typed %q after a field was clicked", h.sys.copied, h.a.query)
+	}
+}
+
 func TestEscapeForgetsWhatShowed(t *testing.T) {
 	h := newHarness(t, nil, true)
 	h.unlock()

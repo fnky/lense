@@ -243,9 +243,10 @@ func (a *app) rowView(c *ui.Context, k ink, i int) {
 		})
 		return
 	}
-	// The rows take the pointer, not the keyboard, which the search keeps.
+	// The rows take the pointer, not the keyboard, which the search keeps,
+	// clicked too: typing still searches.
 	chosen := i == a.sel
-	b := ui.Row(c).Padding(7, 10).Gap(10).Radius(8).AlignItems(ui.Center).Selected(chosen).Translate(0, a.listOff)
+	b := ui.Row(c).Padding(7, 10).Gap(10).Radius(8).AlignItems(ui.Center).Selected(chosen).Translate(0, a.listOff).KeepFocus()
 	if k.vibrant && a.rows[0].header != "" {
 		b.Effect(underHeader{dy: a.listOff})
 	}
@@ -699,9 +700,10 @@ func (a *app) fieldRow(c *ui.Context, k ink, it *bw.Item, f field, key string, r
 	default:
 		shown = a.shownValue(key, f)
 	}
-	// The row takes the pointer, not the keyboard, which the search keeps.
+	// The row takes the pointer, not the keyboard, which the search keeps,
+	// clicked too: typing still searches.
 	row := ui.Row(c).Padding(9, 12).Gap(10).AlignItems(ui.Center).Label(f.label).
-		Description("Click to copy, or drag into a field")
+		Description("Click to copy, or drag into a field").KeepFocus()
 	if divider {
 		row.BorderWidth(1, 0, 0, 0).BorderColor(k.line)
 	}
