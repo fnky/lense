@@ -49,6 +49,15 @@ go tool mygo build
 The result is in `build/darwin-arm64/`. Before you distribute it, replace
 the placeholder bundle identifier in `mygo.json`.
 
+Signed ad hoc, as it is by default, each build is a new app to macOS, which
+forgets the Accessibility permission it gave the last one: the switch in
+System Settings stays on, but no longer applies. Sign it with a certificate of
+yours, such as the Apple Development one Xcode makes, and macOS keeps it:
+
+```sh
+go tool mygo build -sign "Apple Development"
+```
+
 ## Use it
 
 On first launch, enter the email of your Bitwarden account and choose its
@@ -138,8 +147,8 @@ Filters combine with words and with each other, and complete as you type `=`.
   Input, as macOS's own do, so that other apps don't see what you type.
 - Screenshots and screen recordings leave Mini's windows out, as Bitwarden's
   do, unless you allow screen capture in Settings → Security.
-- Builds signed with a Developer ID (`macos.signingIdentity` in `mygo.json`)
-  run under the hardened runtime, which keeps debuggers, injected libraries
+- Builds signed with a certificate (`-sign`, or `macos.signingIdentity` in
+  `mygo.json`) run under the hardened runtime, which keeps debuggers, injected libraries
   and other processes out of Mini's memory; `entitlements.plist` lets it ask
   your browser for its page. Builds signed ad hoc don't, unless you sign them
   so yourself:
