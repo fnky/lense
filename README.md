@@ -65,6 +65,10 @@ server: bitwarden.com, bitwarden.eu, or the address of your own. Mini checks
 both against the accounts signed in to the desktop app, and says how to fix a
 mismatch, such as an account that lives on the other region.
 
+Opening the app shows Quick Access, as its shortcut does, whether it was
+running or not; it waits with its buttons off while it reads the desktop
+app's data. Opened at login, it stays in the menu bar.
+
 The keys act where Quick Access is: on the search results, on the fields
 of the item chosen, or on the vaults. Change any of them in Settings, the
 shortcut that shows Bitwarden Mini included.

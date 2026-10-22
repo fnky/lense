@@ -492,6 +492,34 @@ func TestUnlockWithTouchID(t *testing.T) {
 	}
 }
 
+func TestShowsWhileLoading(t *testing.T) {
+	h := newHarness(t, nil, true)
+	// The app starts: its window shows before it read the desktop app's
+	// data, which the locked window waits for, its buttons off.
+	h.a.store, h.a.loaded = nil, false
+	h.a.shown()
+	h.settle()
+	h.has("Bitwarden Mini is locked", "Loading…", "Unlock with Touch ID")
+	snapshot(t, h.tt, "locked-loading")
+	_ = h.tt.Click("Unlock with Touch ID")
+	h.a.password = "not it"
+	h.a.unlockPassword()
+	h.settle()
+	if h.desk.unlocks != 0 || h.a.busy != "" || h.a.lockProb != nil {
+		t.Fatalf("unlocks %d, busy %q, problem %+v while loading", h.desk.unlocks, h.a.busy, h.a.lockProb)
+	}
+	// Read, Touch ID unlocks, as the window showed.
+	h.a.password = ""
+	h.a.reload()
+	h.settle()
+	if h.desk.unlocks != 1 || !h.a.unlocked() {
+		t.Fatalf("unlocks %d, problem %+v", h.desk.unlocks, h.a.lockProb)
+	}
+	if h.tt.HasText("Loading…") {
+		t.Error("still loading")
+	}
+}
+
 func TestTouchIDProblems(t *testing.T) {
 	for _, tc := range []struct {
 		err    error

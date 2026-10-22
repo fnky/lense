@@ -152,9 +152,11 @@ type app struct {
 
 	page page
 
-	// What the desktop app keeps.
+	// What the desktop app keeps, once read (loaded): until then, the
+	// window shows that it loads, with nothing to unlock with.
 	store    *bw.Store
 	storeErr error
+	loaded   bool
 
 	// Setting up the account.
 	setupEmail  string
@@ -188,8 +190,10 @@ type app struct {
 	password  string
 	lockProb  *problem
 	pwField   ui.Handle
-	// tried is whether Touch ID was tried as the window showed, locked.
-	tried bool
+	// tried is whether Touch ID was tried as the window showed, locked;
+	// showing whether it shows.
+	tried   bool
+	showing bool
 
 	// The items.
 	query  string
@@ -324,15 +328,23 @@ func (a *app) say(format string, args ...any) {
 // --- The desktop app's data ---
 
 // reload reads the desktop app's data again, and decrypts the vault anew
-// when it changed.
+// when it changed. Read the first time, Touch ID can unlock the window
+// that showed meanwhile.
 func (a *app) reload() {
 	a.spawn(func() {
 		st, err := a.desk.load()
-		a.post(func() { a.setStore(st, err) })
+		a.post(func() {
+			first := !a.loaded
+			a.setStore(st, err)
+			if first {
+				a.askTouchID()
+			}
+		})
 	})
 }
 
 func (a *app) setStore(st *bw.Store, err error) {
+	a.loaded = true
 	if err != nil {
 		a.store, a.storeErr = nil, err
 		return
@@ -504,7 +516,7 @@ func (a *app) connect() {
 	email := strings.TrimSpace(a.setupEmail)
 	server := a.setupServer()
 	switch {
-	case a.connecting:
+	case a.connecting || !a.loaded:
 		return
 	case email == "" || !strings.Contains(email, "@"):
 		a.setupProb = &problem{title: "Enter the email address of your Bitwarden account"}
@@ -647,7 +659,14 @@ func (a *app) touchIDOffered() bool {
 
 // shown is called as the window shows: locked, it asks for Touch ID once.
 func (a *app) shown() {
-	if a.configured() && !a.unlocked() && !a.tried && a.busy == "" && a.lockProb == nil && a.page == pageItems {
+	a.showing = true
+	a.askTouchID()
+}
+
+// askTouchID asks for Touch ID once as the window shows, locked, as soon as
+// the desktop app's data is read.
+func (a *app) askTouchID() {
+	if a.showing && a.loaded && a.configured() && !a.unlocked() && !a.tried && a.busy == "" && a.lockProb == nil && a.page == pageItems {
 		a.tried = true
 		if a.touchIDOffered() {
 			a.unlockTouchID(false)
@@ -659,7 +678,7 @@ func (a *app) shown() {
 // itself and kept the vault, else through the desktop app, which launch
 // opens first if it isn't running, as the user asked for Touch ID.
 func (a *app) unlockTouchID(launch bool) {
-	if a.busy != "" {
+	if a.busy != "" || !a.loaded {
 		return
 	}
 	a.lockProb = nil
@@ -843,7 +862,7 @@ func (a *app) unlockProblem(err error, acc bw.Account) *problem {
 // unlockPassword unlocks with the master password, with no server: it
 // derives the key that the desktop app's data keeps the vault under.
 func (a *app) unlockPassword() {
-	if a.busy != "" || a.password == "" {
+	if a.busy != "" || a.password == "" || !a.loaded {
 		return
 	}
 	acc, prob := a.account()

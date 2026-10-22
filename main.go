@@ -153,12 +153,16 @@ func (s *shell) ready() {
 
 	a.reload()
 	go s.watch()
-	if !a.configured() {
+	switch {
+	case !a.configured():
 		// Nothing to search yet: show how to set it up.
 		mygo.RunOnMain(func() {
 			a.startSetup()
 			s.show()
 		})
+	case !mygo.App.WasOpenedAtLogin():
+		// Opened, it shows at once, as its shortcut does, loading.
+		mygo.RunOnMain(s.show)
 	}
 }
 
@@ -640,6 +644,8 @@ func main() {
 	// The window hides rather than closes; keep running without it.
 	mygo.App.OnWindowAllClosed(func() {})
 	mygo.App.OnSecondInstance(func([]string, string) { s.show() })
+	// Opened again while it runs, it shows too.
+	mygo.App.OnActivate(func(bool) { s.show() })
 	mygo.App.WhenReady(s.ready)
 	if err := mygo.App.Run(); err != nil {
 		log.Fatal(err)

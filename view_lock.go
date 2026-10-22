@@ -7,8 +7,10 @@ import (
 )
 
 // lockedView unlocks the vault: with Touch ID, of this Mac or through the
-// Bitwarden app, or with the master password.
+// Bitwarden app, or with the master password, once the desktop app's data
+// is read: until then, its buttons wait.
 func (a *app) lockedView(c *ui.Context, k ink) {
+	loading := !a.loaded
 	a.dragHandle(ui.Row(c).Height(44).Padding(0, 10).AlignItems(ui.Center)).Children(func() {
 		ui.Spacer(c)
 		letThrough(iconButton(c.Key("settings"), k, iconSettings, "Settings (⌘,)")).OnClick(a.openSettings)
@@ -20,7 +22,13 @@ func (a *app) lockedView(c *ui.Context, k ink) {
 				ui.Text(c, "Bitwarden Mini is locked").FontSize(17).FontWeight(650)
 				ui.Text(c, a.cfg.Email+" · "+a.cfg.Server.Host()).FontSize(12).TextColor(k.muted).SingleLine()
 			})
-			if a.lockProb != nil {
+			switch {
+			case loading:
+				ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+					ui.Spinner(c).Size(14, 14)
+					ui.Text(c, "Loading…").FontSize(12).TextColor(k.muted)
+				})
+			case a.lockProb != nil:
 				problemBox(c.Key("prob"), k, a.lockProb).AlignSelf(ui.Stretch)
 			}
 			if a.touchIDOffered() {
@@ -33,7 +41,7 @@ func (a *app) lockedView(c *ui.Context, k ink) {
 				case a.busy == "touch":
 					label = "Waiting for Touch ID…"
 				}
-				primaryButton(c.Key("touch"), k, label, a.busy != "").AlignSelf(ui.Stretch).Padding(7, 12).
+				primaryButton(c.Key("touch"), k, label, a.busy != "" || loading).AlignSelf(ui.Stretch).Padding(7, 12).
 					OnClick(func() { a.unlockTouchID(true) })
 			}
 			// The button as tall as the field.
@@ -47,7 +55,7 @@ func (a *app) lockedView(c *ui.Context, k ink) {
 				if a.busy == "password" {
 					ui.Spinner(c).Size(16, 16).AlignSelf(ui.Center)
 				} else {
-					pushButton(c.Key("unlock"), k, "Unlock", a.password == "" || a.busy != "").OnClick(a.unlockPassword)
+					pushButton(c.Key("unlock"), k, "Unlock", a.password == "" || a.busy != "" || loading).OnClick(a.unlockPassword)
 				}
 			})
 			ui.Text(c, "Your master password unlocks the vault on this Mac, without going online.").
@@ -100,8 +108,9 @@ func (a *app) setupView(c *ui.Context, k ink) {
 				problemBox(c.Key("prob"), k, a.setupProb)
 			}
 			ui.Row(c).Gap(10).AlignItems(ui.Center).Children(func() {
-				primaryButton(c.Key("continue"), k, "Continue", a.connecting).OnClick(a.connect)
-				if a.connecting {
+				busy := a.connecting || !a.loaded // or the desktop app's data loading
+				primaryButton(c.Key("continue"), k, "Continue", busy).OnClick(a.connect)
+				if busy {
 					ui.Spinner(c).Size(14, 14)
 				}
 			})
