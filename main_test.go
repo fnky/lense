@@ -1306,10 +1306,9 @@ func TestRowsFadeUnderThePinnedHeader(t *testing.T) {
 	}
 	clear()
 	// Stretched past the end, the rows go up under the header, which
-	// stays.
-	for range 20 {
-		h.tt.Scroll(150, 300, 0, 200)
-	}
+	// stays. The trackpad goes just to the end first.
+	at := h.a.listBand.at
+	h.tt.Scroll(150, 300, 0, at.MaxY-at.Y)
 	h.settle()
 	for range 4 {
 		if !h.a.stretch(&h.a.listBand, pull(250, h.tt.Now())) {

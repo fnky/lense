@@ -248,7 +248,7 @@ func (a *app) rowView(c *ui.Context, k ink, i int) {
 	chosen := i == a.sel
 	b := ui.Row(c).Padding(7, 10).Gap(10).Radius(8).AlignItems(ui.Center).Selected(chosen).Translate(0, a.listOff).KeepFocus()
 	if k.vibrant && a.rows[0].header != "" {
-		b.Effect(underHeader{dy: a.listOff})
+		b.Effect(underHeader{})
 	}
 	inDetails := chosen && a.mode == modeDetails
 	switch {
@@ -316,8 +316,8 @@ const sectionHeight = 28
 // underHeader fades a row of the list out as it scrolls under the header
 // pinned at the list's top: wholly under the header, and over headerFade
 // DIPs below it. The list clips the row to its box, whose top the header
-// pins to; dy moves the row off its place (band).
-type underHeader struct{ dy float32 }
+// pins to, which the painter sees from the row moved off its place (band).
+type underHeader struct{}
 
 // headerFade is the list's top padding, by which the first rows are below
 // the first header: they show wholly until they scroll.
@@ -337,8 +337,8 @@ func ColorEffect(pos vec2, color vec4) vec4 {
 
 func (underHeader) EffectMargin() ui.Point { return ui.Point{} }
 
-func (u underHeader) PaintEffect(p *ui.Painter, box ui.Rect, content *ui.Bitmap, inset ui.Point) {
-	cut := p.Visible().Y + sectionHeight - box.Y - u.dy
+func (underHeader) PaintEffect(p *ui.Painter, box ui.Rect, content *ui.Bitmap, inset ui.Point) {
+	cut := p.Visible().Y + sectionHeight - box.Y
 	fx := fadeUnder.Effect(shader.Options{Uniforms: map[string]any{"Cut": cut, "Fade": float32(headerFade)}})
 	fx.PaintEffect(p, box, content, inset)
 }
