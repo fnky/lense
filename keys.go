@@ -82,7 +82,7 @@ var actions = []action{
 	{"field-next", "Next field", "Item details", inDetails, []string{"Down"}},
 	{"field-reveal", "Reveal, or show in Large Type", "Item details", inDetails, []string{"Right"}},
 	{"field-back", "Back to the results", "Item details", inDetails, []string{"Left"}},
-	{"field-copy", "Copy the field", "Item details", inDetails, []string{"Return"}},
+	{"field-copy", "Copy the field, and close", "Item details", inDetails, []string{"Return"}},
 
 	{"vault-previous", "Previous vault", "Vault selector", inVaults, []string{"Up"}},
 	{"vault-next", "Next vault", "Vault selector", inVaults, []string{"Down"}},

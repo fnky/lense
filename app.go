@@ -1298,7 +1298,11 @@ func (a *app) closeConfirm() {
 }
 
 // copyField copies a value of an item.
-func (a *app) copyField(it *bw.Item, f field) {
+func (a *app) copyField(it *bw.Item, f field) { a.copyFieldThen(it, f, nil) }
+
+// copyFieldThen copies a value of an item, then does then, if any: once
+// copied, after the master password the item may ask for first.
+func (a *app) copyFieldThen(it *bw.Item, f field, then func()) {
 	do := func() {
 		v, err := f.open()
 		if err != nil {
@@ -1312,6 +1316,9 @@ func (a *app) copyField(it *bw.Item, f field) {
 			a.say("Copied %s of %s · clears in %s", f.label, it.Name, seconds(a.cfg.ClearClipboard))
 		} else {
 			a.say("Copied %s of %s", f.label, it.Name)
+		}
+		if then != nil {
+			then()
 		}
 	}
 	if f.secret {

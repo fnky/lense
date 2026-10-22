@@ -79,8 +79,10 @@ func (a *app) run(id string) bool {
 	case "field-back":
 		a.setMode(modeResults)
 	case "field-copy":
+		// Copied by its key, the field is what the window showed for: it
+		// goes, as it does once it fills. Clicked, the field stays.
 		if it, f, ok := a.focusedField(); ok {
-			a.copyField(it, f)
+			a.copyFieldThen(it, f, a.close)
 		}
 	case "vault-previous":
 		a.moveVault(-1)

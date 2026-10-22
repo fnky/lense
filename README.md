@@ -79,7 +79,7 @@ shortcut that shows Bitwarden Mini included.
 | Item fields | |
 |---|---|
 | ↑ ↓ | Choose a field |
-| ↩ | Copy the field |
+| ↩ | Copy the field, and close |
 | → | Reveal a password, then show it in Large Type; show other fields in Large Type |
 | ← | Back to the results |
 
@@ -111,8 +111,8 @@ Appearance. The list and the details scroll under the footer, which macOS's
 own material frosts, as under Raycast's action bar. Buttons of an icon name
 themselves in a tooltip, unless you turn tooltips off there too.
 
-Hold ⌥ to see passwords. Click a field to copy it, or drag it into a field of
-another app. The button of a website opens it, and fills the login in. Copied passwords and codes are marked concealed for clipboard
+Hold ⌥ to see passwords. Click a field to copy it, which keeps Quick Access
+open, unlike ↩, or drag it into a field of another app. The button of a website opens it, and fills the login in. Copied passwords and codes are marked concealed for clipboard
 managers, and cleared after 90 seconds unless you copied something else.
 
 ### Search filters

@@ -679,6 +679,26 @@ func TestReprompt(t *testing.T) {
 	if h.a.confirm != nil || len(h.sys.copied) != 2 {
 		t.Error("asked again")
 	}
+	// Return on a field closes the window once it copied, after the
+	// master password: closed, the window forgets it was given.
+	h.key(0, ui.KeyRight)
+	h.key(0, ui.KeyDown)
+	h.key(0, ui.KeyEnter)
+	if len(h.sys.copied) != 3 || h.sys.hidden != 1 {
+		t.Fatalf("copied %q, hidden %d", h.sys.copied, h.sys.hidden)
+	}
+	h.key(0, ui.KeyRight)
+	h.key(0, ui.KeyDown)
+	h.key(0, ui.KeyEnter)
+	if h.a.confirm == nil || len(h.sys.copied) != 3 || h.sys.hidden != 1 {
+		t.Fatalf("copied %q, hidden %d without the master password", h.sys.copied, h.sys.hidden)
+	}
+	h.a.confirmPw = f.Password
+	h.a.confirmPassword()
+	h.settle()
+	if h.sys.last() != "b4nk" || len(h.sys.copied) != 4 || h.sys.hidden != 2 {
+		t.Fatalf("copied %q, hidden %d", h.sys.copied, h.sys.hidden)
+	}
 }
 
 func TestFillNeedsAccessibility(t *testing.T) {
@@ -904,10 +924,12 @@ func TestDetailsKeys(t *testing.T) {
 		t.Fatalf("mode %v, field %d", h.a.mode, h.a.fieldSel)
 	}
 	snapshot(t, h.tt, "details")
+	// Return copies the field, and closes the window.
 	h.key(0, ui.KeyEnter)
-	if h.sys.last() != "ada" {
-		t.Fatalf("Return copied %q", h.sys.copied)
+	if h.sys.last() != "ada" || h.sys.hidden != 1 || h.a.mode != modeResults {
+		t.Fatalf("Return copied %q, hidden %d, mode %v", h.sys.copied, h.sys.hidden, h.a.mode)
 	}
+	h.key(0, ui.KeyRight) // shown again, back to the fields
 	h.key(0, ui.KeyDown)
 	if _, f, _ := h.a.focusedField(); f.label != "password" {
 		t.Fatalf("field %q", f.label)
@@ -929,8 +951,14 @@ func TestDetailsKeys(t *testing.T) {
 	}
 	h.key(0, ui.KeyDown)
 	h.key(0, ui.KeyEnter)
-	if code, _, _ := h.a.code(h.a.selected()); h.sys.last() != code {
-		t.Errorf("copied %q, not the code", h.sys.last())
+	if code, _, _ := h.a.code(h.a.selected()); h.sys.last() != code || h.sys.hidden != 2 {
+		t.Errorf("copied %q, not the code; hidden %d", h.sys.last(), h.sys.hidden)
+	}
+	// Clicked, a field copies, and the window stays.
+	h.key(0, ui.KeyRight)
+	h.click("username")
+	if h.sys.last() != "ada" || h.sys.hidden != 2 || h.a.mode != modeDetails {
+		t.Fatalf("clicked: copied %q, hidden %d, mode %v", h.sys.copied, h.sys.hidden, h.a.mode)
 	}
 	h.key(0, ui.KeyLeft)
 	if h.a.mode != modeResults {
