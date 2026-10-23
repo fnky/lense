@@ -366,7 +366,7 @@ func subtitle(it *bw.Item) string {
 
 func (a *app) noItem(c *ui.Context, k ink) {
 	ui.Column(c).Fill().Center().Gap(6).Padding(24).Children(func() {
-		ui.Icon(c, iconShield).FontSize(36).TextColor(k.text.Alpha(0.12))
+		ui.Icon(c, iconLens).FontSize(36).TextColor(k.text.Alpha(0.12))
 		ui.Text(c, "Type to search your vault").TextColor(k.muted)
 		ui.Text(c, "Filters: =favorite =tag: =category: =vault: =passkey =location: =untagged").
 			FontSize(11.5).TextColor(k.faint).TextAlign(ui.Center).LineHeight(1.4).MaxWidth(320)

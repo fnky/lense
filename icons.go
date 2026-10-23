@@ -41,7 +41,11 @@ var (
 	iconCheck     = icon(`<path d="M20 6 9 17l-5-5"/>`)
 	iconClose     = icon(`<path d="M18 6 6 18"/><path d="m6 6 12 12"/>`)
 	iconBack      = icon(`<path d="m15 18-6-6 6-6"/>`)
-	iconShield    = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M5 2.5h14a1 1 0 0 1 1 1V12c0 4.6-4.3 7.8-8 9.6-3.7-1.8-8-5-8-9.6V3.5a1 1 0 0 1 1-1Zm7 2.3v14.4c3-1.6 5.8-3.9 5.8-7.2V4.8Z"/></svg>`))
+	// Lense's mark, as its icon draws it: a lens, its rim around the glass
+	// and a keyhole in its middle, and the glint on the glass, apart, to
+	// show fainter.
+	iconLens  = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M2.4 12a9.6 9.6 0 1 0 19.2 0a9.6 9.6 0 1 0-19.2 0ZM4.416 12a7.584 7.584 0 1 0 15.168 0a7.584 7.584 0 1 0-15.168 0ZM10.46 16.8 11.1 12.53A2.26 2.26 0 1 1 12.9 12.53L13.54 16.8Z"/></svg>`))
+	iconGlint = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" d="M9.4 6.43A6.14 6.14 0 0 0 6.23 9.9L6.95 10.16A5.38 5.38 0 0 1 9.73 7.13Z"/></svg>`))
 )
 
 // itemIcon is the icon of an item of a kind.
@@ -59,38 +63,24 @@ func itemIcon(kind int) *ui.SVG {
 	return iconLogin
 }
 
-// shield reports how much of the pixel at (px, py) Bitwarden's shield
-// covers, in a box of size s: the outline, and the left half within.
-func shield(px, py, s float64, outline bool) bool {
-	x, y := px/s, py/s // 0..1
-	const top, mid, bottom = 0.08, 0.52, 0.95
-	const left, right = 0.14, 0.86
-	inside := func(x, y, inset float64) bool {
-		l, r := left+inset, right-inset
-		t, m, b := top+inset, mid, bottom-inset*1.4
-		switch {
-		case y < t || y > b:
-			return false
-		case y <= m:
-			return x >= l && x <= r
-		}
-		// The bottom curves in to a point, as an ellipse's quarter.
-		f := (y - m) / (b - m)
-		hw := (r - l) / 2 * math.Sqrt(math.Max(0, 1-f*f))
-		cx := (l + r) / 2
-		return x >= cx-hw && x <= cx+hw
-	}
-	if !outline {
-		return inside(x, y, 0)
-	}
-	if !inside(x, y, 0) {
-		return false
-	}
-	// A ring, and the left half of what it holds.
-	if !inside(x, y, 0.1) {
+// lens reports whether Lense's mark covers the point (u, v), in units of
+// the lens's radius about its middle: the rim around the glass, and the
+// keyhole in its middle.
+func lens(u, v float64) bool {
+	const glass = 0.79 // the glass's radius, inside the rim
+	if r := math.Hypot(u, v); r <= 1 && r > glass {
 		return true
 	}
-	return x < 0.5 && inside(x, y, 0.16)
+	// The keyhole: a bow, and a blade that widens down from it.
+	const bow, bowR = -0.16, 0.235
+	if math.Hypot(u, v-bow) <= bowR {
+		return true
+	}
+	const bottom = 0.5
+	if v < 0 || v > bottom {
+		return false
+	}
+	return math.Abs(u) <= 0.085+v/bottom*(0.16-0.085)
 }
 
 // render draws a mark into a size×size image at 4×4 samples per pixel,
@@ -117,12 +107,13 @@ func render(size int, c color.NRGBA, hit func(px, py float64) bool) *image.NRGBA
 	return img
 }
 
-// trayIcon is the shield, 18 points high at twice the scale, black on
+// trayIcon is the lens, 18 points high at twice the scale, black on
 // transparent for macOS to tint.
 func trayIcon(locked bool) []byte {
 	const size = 36
+	const r = 0.46 * size // the lens's radius
 	img := render(size, color.NRGBA{A: 255}, func(px, py float64) bool {
-		return shield(px, py, size, true)
+		return lens((px-size/2)/r, (py-size/2)/r)
 	})
 	if locked {
 		// A dot at the bottom right says the vault is locked.

@@ -17,7 +17,7 @@ func (a *app) lockedView(c *ui.Context, k ink) {
 	})
 	ui.Column(c).Grow(1).Center().Padding(0, 0, 44, 0).Children(func() {
 		ui.Column(c).Width(340).Gap(14).AlignItems(ui.Center).Children(func() {
-			shieldTile(c, k, 56)
+			markTile(c, 56)
 			ui.Column(c).Gap(3).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, "Lense is locked").FontSize(17).FontWeight(650)
 				ui.Text(c, a.cfg.Email+" · "+a.cfg.Server.Host()).FontSize(12).TextColor(k.muted).SingleLine()
@@ -75,7 +75,7 @@ func (a *app) setupView(c *ui.Context, k ink) {
 	})
 	ui.Row(c).Grow(1).Padding(0, 48, 28, 48).Gap(40).AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Width(250).Gap(12).Children(func() {
-			shieldTile(c, k, 52)
+			markTile(c, 52)
 			ui.Text(c, "Connect to Bitwarden").FontSize(20).FontWeight(650)
 			ui.Text(c, "Lense searches the vault the Bitwarden app keeps on this Mac, and asks the app to unlock it with Touch ID. It never connects to Bitwarden's servers itself.").
 				FontSize(12.5).TextColor(k.muted).LineHeight(1.45)

@@ -335,13 +335,23 @@ func keycap(c *ui.Context, k ink, keys, label string) {
 	})
 }
 
-// shieldTile is the app's mark.
-func shieldTile(c *ui.Context, k ink, size float32) ui.Element {
+// Lense's teal, from the top of its icon to the bottom.
+var (
+	lenseTop    = ui.RGB(0x2b, 0xc6, 0xb4)
+	lenseBottom = ui.RGB(0x0c, 0x6a, 0x86)
+)
+
+// markTile is the app's mark, as its icon draws it: the lens as wide of
+// the tile as of the icon's squircle.
+func markTile(c *ui.Context, size float32) ui.Element {
 	tile := ui.Row(c).Size(size, size).Radius(size*0.26).Center().
-		Gradient(k.accent.Mix(ui.RGB(255, 255, 255), 0.12), k.accent.Mix(ui.RGB(0, 0, 0), 0.12), 180).
-		Shadow(0, 3, 10, 0, k.accent.Alpha(0.3))
+		Gradient(lenseTop, lenseBottom, 180).
+		Shadow(0, 3, 10, 0, lenseBottom.Alpha(0.3))
+	mark, inset := size*0.82, size*0.09
 	tile.Children(func() {
-		ui.Icon(c, iconShield).FontSize(size * 0.6).TextColor(ui.RGB(255, 255, 255))
+		ui.Icon(c, iconLens).FontSize(mark).TextColor(ui.RGB(255, 255, 255))
+		ui.Icon(c, iconGlint).FontSize(mark).TextColor(ui.RGBA(255, 255, 255, 0.55)).
+			Absolute().Top(inset).Left(inset)
 	})
 	return tile
 }
