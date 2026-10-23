@@ -123,7 +123,7 @@ func (a *app) record(act action, i int, mods ui.Modifiers, key ui.Key) {
 		return
 	case mods == 0 && (key == ui.KeyBackspace || key == ui.KeyDelete):
 		if act.id == "show" {
-			a.keyErr = "Bitwarden Mini needs a shortcut to show it."
+			a.keyErr = "Lense needs a shortcut to show it."
 			return
 		}
 		if i < len(keys) {

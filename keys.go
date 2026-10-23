@@ -70,7 +70,7 @@ type action struct {
 
 // actions are what Quick Access does from the keyboard, by group.
 var actions = []action{
-	{"show", "Show Bitwarden Mini", "Global", inGlobal, []string{defaultShortcut}},
+	{"show", "Show Lense", "Global", inGlobal, []string{defaultShortcut}},
 
 	{"previous", "Previous item", "Search results", inResults, []string{"Up"}},
 	{"next", "Next item", "Search results", inResults, []string{"Down"}},

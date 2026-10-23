@@ -4,7 +4,7 @@ import (
 	"math"
 	"time"
 
-	"bitwarden-mini/internal/macos"
+	"lense/internal/macos"
 
 	"github.com/egoist/mygo/ui"
 )

@@ -19,7 +19,7 @@ import (
 	"strings"
 	"unicode"
 
-	"bitwarden-mini/internal/bw"
+	"lense/internal/bw"
 )
 
 // Kind is the kind of a filter.

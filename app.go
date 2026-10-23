@@ -9,18 +9,18 @@ import (
 	"strings"
 	"time"
 
-	"bitwarden-mini/internal/bw"
-	"bitwarden-mini/internal/ipc"
-	"bitwarden-mini/internal/macos"
-	"bitwarden-mini/internal/search"
-	"bitwarden-mini/internal/totp"
+	"lense/internal/bw"
+	"lense/internal/ipc"
+	"lense/internal/macos"
+	"lense/internal/search"
+	"lense/internal/totp"
 
 	"github.com/egoist/mygo/ui"
 )
 
 // desktop is the Bitwarden desktop app: the vault it keeps on this Mac,
 // and unlocking it with Touch ID, which it does for its browser
-// extensions. Bitwarden Mini makes no request of Bitwarden's servers.
+// extensions. Lense makes no request of Bitwarden's servers.
 type desktop interface {
 	load() (*bw.Store, error)
 	// unlock asks the app to unlock the account with Touch ID, and
@@ -131,7 +131,7 @@ func (r row) key() any {
 	return "h:" + r.header
 }
 
-// app is the state of Bitwarden Mini. Everything in it is read and changed
+// app is the state of Lense. Everything in it is read and changed
 // on the main thread: work in other goroutines posts its results back
 // with post.
 type app struct {
@@ -421,18 +421,18 @@ func (a *app) dataProblem(err error) *problem {
 	case errors.Is(err, bw.ErrNoData) && a.desk.installed():
 		return &problem{
 			title:  "Sign in to Bitwarden first",
-			detail: "Bitwarden Mini reads the vault the Bitwarden app keeps on this Mac, and the app hasn't saved one yet. Open Bitwarden and sign in, then come back.",
+			detail: "Lense reads the vault the Bitwarden app keeps on this Mac, and the app hasn't saved one yet. Open Bitwarden and sign in, then come back.",
 			fix:    "Open Bitwarden", do: a.openBitwarden,
 		}
 	case errors.Is(err, bw.ErrNoData):
 		return &problem{
 			title:  "Bitwarden isn't installed",
-			detail: "Bitwarden Mini is a companion to the Bitwarden desktop app. Install Bitwarden, sign in, then come back.",
+			detail: "Lense is a companion to the Bitwarden desktop app. Install Bitwarden, sign in, then come back.",
 			fix:    "Get Bitwarden", do: func() { a.sys.openURL("https://bitwarden.com/download/") },
 		}
 	case errors.Is(err, fs.ErrPermission):
 		return &problem{
-			title:  "Bitwarden Mini can't read Bitwarden's data",
+			title:  "Lense can't read Bitwarden's data",
 			detail: "macOS keeps it from reading the data of the Bitwarden app. Allow it in System Settings → Privacy & Security → App Management, then try again.",
 			fix:    "Try Again", do: a.reload,
 		}
@@ -445,7 +445,7 @@ func (a *app) dataProblem(err error) *problem {
 }
 
 func (a *app) notSignedIn(email string, server bw.Server) *problem {
-	detail := fmt.Sprintf("Sign in to the Bitwarden app with %s on %s first: Bitwarden Mini uses the vault the app keeps on this Mac.", email, server.Host())
+	detail := fmt.Sprintf("Sign in to the Bitwarden app with %s on %s first: Lense uses the vault the app keeps on this Mac.", email, server.Host())
 	if a.store != nil {
 		var others []string
 		for _, acc := range a.store.Accounts() {
@@ -693,7 +693,7 @@ func (a *app) unlockTouchID(launch bool) {
 		a.holdOpen++
 		sealed, userID, st := a.sealed, a.sealedFor, a.store
 		a.spawn(func() {
-			b, err := sealed.open("unlock Bitwarden Mini")
+			b, err := sealed.open("unlock your vault")
 			var v *bw.Vault
 			if err == nil {
 				var key bw.SymmetricKey
@@ -715,7 +715,7 @@ func (a *app) unlockTouchID(launch bool) {
 				case errors.Is(err, macos.ErrCanceled):
 				case errors.Is(err, macos.ErrSealedGone):
 					a.forgetKey()
-					a.lockProb = &problem{title: "Touch ID changed", detail: "Its fingerprints changed since Bitwarden Mini locked. Unlock with Bitwarden, or enter your master password."}
+					a.lockProb = &problem{title: "Touch ID changed", detail: "Its fingerprints changed since Lense locked. Unlock with Bitwarden, or enter your master password."}
 				case errors.Is(err, macos.ErrBiometricsLockout), errors.Is(err, macos.ErrAuthFailed):
 					a.lockProb = &problem{title: err.Error(), detail: "Enter your master password instead."}
 				case errors.As(err, new(*macos.AuthError)):
@@ -827,7 +827,7 @@ func (a *app) unlockProblem(err error, acc bw.Account) *problem {
 	case errors.Is(err, ipc.ErrNoSocket):
 		return &problem{
 			title:  "Turn on browser integration in Bitwarden",
-			detail: "Bitwarden Mini asks Bitwarden to unlock with Touch ID as its browser extension does. In Bitwarden's Settings, turn on “Allow browser integration”, or enter your master password.",
+			detail: "Lense asks Bitwarden to unlock with Touch ID as its browser extension does. In Bitwarden's Settings, turn on “Allow browser integration”, or enter your master password.",
 			fix:    "Open Bitwarden", do: a.openBitwarden,
 		}
 	case errors.Is(err, ipc.ErrWrongUser):
@@ -1433,8 +1433,8 @@ func (a *app) fillInto(it *bw.Item, page string) {
 	a.guarded(it, func() {
 		if !a.sys.trusted(false) {
 			a.prob = &problem{
-				title:  "Allow Bitwarden Mini to fill in other apps",
-				detail: "To type your username and password, Bitwarden Mini needs Accessibility access: System Settings → Privacy & Security → Accessibility.",
+				title:  "Allow Lense to fill in other apps",
+				detail: "To type your username and password, Lense needs Accessibility access: System Settings → Privacy & Security → Accessibility.",
 				fix:    "Open System Settings",
 				do: func() {
 					a.sys.trusted(true)

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"bitwarden-mini/internal/bw"
-	"bitwarden-mini/internal/bw/bwtest"
+	"lense/internal/bw"
+	"lense/internal/bw/bwtest"
 )
 
 func TestUnlockAndDecrypt(t *testing.T) {

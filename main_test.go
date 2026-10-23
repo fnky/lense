@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"bitwarden-mini/internal/bw"
-	"bitwarden-mini/internal/bw/bwtest"
-	"bitwarden-mini/internal/ipc"
-	"bitwarden-mini/internal/macos"
+	"lense/internal/bw"
+	"lense/internal/bw/bwtest"
+	"lense/internal/ipc"
+	"lense/internal/macos"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -333,9 +333,9 @@ func (h *harness) unlock() {
 	}
 }
 
-// snapshot writes the frame to $BWMINI_SNAPSHOTS, to look at.
+// snapshot writes the frame to $LENSE_SNAPSHOTS, to look at.
 func snapshot(t *testing.T, tt *ui.Tester, name string) {
-	dir := os.Getenv("BWMINI_SNAPSHOTS")
+	dir := os.Getenv("LENSE_SNAPSHOTS")
 	if dir == "" {
 		return
 	}
@@ -382,7 +382,7 @@ func TestSetup(t *testing.T) {
 	if !h.a.configured() || h.a.page != pageItems || h.a.cfg.Server.Region != bw.RegionUS {
 		t.Fatalf("not set up: %+v %+v", h.a.cfg, h.a.setupProb)
 	}
-	h.has("Bitwarden Mini is locked", "ada@example.com · bitwarden.com")
+	h.has("Lense is locked", "ada@example.com · bitwarden.com")
 }
 
 func TestServerChangedSince(t *testing.T) {
@@ -403,7 +403,7 @@ func TestServerChangedSince(t *testing.T) {
 
 func TestUnlockWithPassword(t *testing.T) {
 	h := newHarness(t, nil, true)
-	h.has("Bitwarden Mini is locked", "Unlock with Touch ID")
+	h.has("Lense is locked", "Unlock with Touch ID")
 	snapshot(t, h.tt, "locked")
 	h.a.password = "not it"
 	h.a.unlockPassword()
@@ -499,7 +499,7 @@ func TestShowsWhileLoading(t *testing.T) {
 	h.a.store, h.a.loaded = nil, false
 	h.a.shown(false)
 	h.settle()
-	h.has("Bitwarden Mini is locked", "Loading…", "Unlock with Touch ID")
+	h.has("Lense is locked", "Loading…", "Unlock with Touch ID")
 	snapshot(t, h.tt, "locked-loading")
 	_ = h.tt.Click("Unlock with Touch ID")
 	h.a.password = "not it"
@@ -751,7 +751,7 @@ func TestFillNeedsAccessibility(t *testing.T) {
 	if len(h.sys.filled) != 0 {
 		t.Fatal("filled without access")
 	}
-	h.has("Allow Bitwarden Mini to fill in other apps", "Open System Settings")
+	h.has("Allow Lense to fill in other apps", "Open System Settings")
 	snapshot(t, h.tt, "fill-access")
 }
 
@@ -807,7 +807,7 @@ func TestSettings(t *testing.T) {
 	snapshot(t, h.tt, "settings")
 
 	// The global shortcut, recorded.
-	h.click("Show Bitwarden Mini key")
+	h.click("Show Lense key")
 	if h.a.recordID != "show" {
 		t.Fatalf("recording %q", h.a.recordID)
 	}
@@ -817,7 +817,7 @@ func TestSettings(t *testing.T) {
 	}
 	h.has("⌥⌘K")
 	h.a.setShortcut = func(string) error { return errors.New("taken") }
-	h.click("Show Bitwarden Mini key")
+	h.click("Show Lense key")
 	h.key(ui.Cmd, ui.KeyJ)
 	if h.a.cfg.Shortcut != "Option+Cmd+K" {
 		t.Errorf("a taken shortcut was saved")

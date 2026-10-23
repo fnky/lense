@@ -1,4 +1,4 @@
-module bitwarden-mini
+module lense
 
 go 1.27.1
 

@@ -171,7 +171,7 @@ type Account struct {
 	Server Server
 	Active bool // the account the app shows
 	// BiometricUnlock is whether the desktop app unlocks this account with
-	// Touch ID, which Bitwarden Mini asks it to do.
+	// Touch ID, which Lense asks it to do.
 	BiometricUnlock bool
 	HasPassword     bool
 	LastSync        time.Time

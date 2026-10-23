@@ -1,7 +1,7 @@
 package main
 
 import (
-	"bitwarden-mini/internal/bw"
+	"lense/internal/bw"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -19,7 +19,7 @@ func (a *app) lockedView(c *ui.Context, k ink) {
 		ui.Column(c).Width(340).Gap(14).AlignItems(ui.Center).Children(func() {
 			shieldTile(c, k, 56)
 			ui.Column(c).Gap(3).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "Bitwarden Mini is locked").FontSize(17).FontWeight(650)
+				ui.Text(c, "Lense is locked").FontSize(17).FontWeight(650)
 				ui.Text(c, a.cfg.Email+" · "+a.cfg.Server.Host()).FontSize(12).TextColor(k.muted).SingleLine()
 			})
 			switch {
@@ -77,7 +77,7 @@ func (a *app) setupView(c *ui.Context, k ink) {
 		ui.Column(c).Width(250).Gap(12).Children(func() {
 			shieldTile(c, k, 52)
 			ui.Text(c, "Connect to Bitwarden").FontSize(20).FontWeight(650)
-			ui.Text(c, "Bitwarden Mini searches the vault the Bitwarden app keeps on this Mac, and asks the app to unlock it with Touch ID. It never connects to Bitwarden's servers itself.").
+			ui.Text(c, "Lense searches the vault the Bitwarden app keeps on this Mac, and asks the app to unlock it with Touch ID. It never connects to Bitwarden's servers itself.").
 				FontSize(12.5).TextColor(k.muted).LineHeight(1.45)
 			if a.store != nil {
 				accs := a.store.Accounts()

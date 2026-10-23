@@ -5,7 +5,7 @@ import (
 	"slices"
 	"time"
 
-	"bitwarden-mini/internal/macos"
+	"lense/internal/macos"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -45,12 +45,12 @@ func (a *app) settingsView(c *ui.Context, k ink) {
 					})
 				})
 				switchRow(c.Key("sleep"), k, "Lock when the Mac sleeps", "Or when its screen locks.", &a.cfg.LockOnSleep, a.changed)
-				detail := "After Bitwarden Mini locks itself, your fingerprint unlocks it until it quits."
+				detail := "After Lense locks itself, your fingerprint unlocks it until it quits."
 				if !a.sys.biometrics() {
 					detail = "This Mac has no Touch ID set up."
 				}
 				switchRow(c.Key("touch"), k, "Unlock with Touch ID", detail, &a.cfg.TouchID, a.changed)
-				switchRow(c.Key("capture"), k, "Allow screen capture", "Lets screenshots and screen recordings show Bitwarden Mini, which macOS leaves out of them otherwise.",
+				switchRow(c.Key("capture"), k, "Allow screen capture", "Lets screenshots and screen recordings show Lense, which macOS leaves out of them otherwise.",
 					&a.cfg.AllowScreenCapture, func() {
 						a.changed()
 						a.applyCapture()
@@ -116,8 +116,8 @@ func (a *app) settingsView(c *ui.Context, k ink) {
 			})
 			a.shortcutsSection(c.Key("keys"), k)
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Margin(4, 0, 0, 0).FontSize(11).TextColor(k.faint).Children(func() {
-				ui.Text(c, "Bitwarden Mini "+a.version).Grow(1)
-				textButton(c.Key("quit"), k, "Quit Bitwarden Mini", nil).OnClick(a.quit)
+				ui.Text(c, "Lense "+a.version).Grow(1)
+				textButton(c.Key("quit"), k, "Quit Lense", nil).OnClick(a.quit)
 			})
 		})
 	})

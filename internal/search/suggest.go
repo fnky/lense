@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"bitwarden-mini/internal/bw"
+	"lense/internal/bw"
 )
 
 // Completion is a way to finish the filter being typed.

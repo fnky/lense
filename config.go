@@ -4,8 +4,9 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 
-	"bitwarden-mini/internal/bw"
+	"lense/internal/bw"
 )
 
 // defaultShortcut opens the window from anywhere.
@@ -92,6 +93,26 @@ func loadConfig(dir string) config {
 		cfg.Server.Region = bw.RegionUS
 	}
 	return cfg
+}
+
+// adoptConfig gives the app in dir the settings it had under its former
+// name, Bitwarden Mini, as it starts without its own: once, as they are.
+// The former folder stays, for the user to remove.
+func adoptConfig(dir string) {
+	if _, err := os.Stat(filepath.Join(dir, "config.json")); err == nil {
+		return
+	}
+	former := strings.Replace(filepath.Base(dir), "Lense", "Bitwarden Mini", 1)
+	if former == filepath.Base(dir) {
+		return
+	}
+	b, err := os.ReadFile(filepath.Join(filepath.Dir(dir), former, "config.json"))
+	if err != nil || !json.Valid(b) {
+		return
+	}
+	if os.MkdirAll(dir, 0o700) == nil {
+		_ = os.WriteFile(filepath.Join(dir, "config.json"), b, 0o600)
+	}
 }
 
 func saveConfig(dir string, cfg config) error {

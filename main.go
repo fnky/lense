@@ -1,4 +1,4 @@
-// Bitwarden Mini is a companion to the Bitwarden desktop app in the menu
+// Lense is a companion to the Bitwarden desktop app in the menu
 // bar: a window that a shortcut opens from anywhere, as Spotlight, to
 // search the vault, copy from it and fill it into other apps. It reads
 // the vault the desktop app keeps on the Mac, and asks the app to unlock
@@ -14,9 +14,9 @@ import (
 	"sync"
 	"time"
 
-	"bitwarden-mini/internal/bw"
-	"bitwarden-mini/internal/ipc"
-	"bitwarden-mini/internal/macos"
+	"lense/internal/bw"
+	"lense/internal/ipc"
+	"lense/internal/macos"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -69,6 +69,7 @@ func (s *shell) ready() {
 	s.dir = dir
 	s.details = map[string]*mygo.Window{}
 	s.ownPID = os.Getpid()
+	adoptConfig(dir)
 	cfg := loadConfig(dir)
 	if cfg.AppID == "" {
 		cfg.AppID = rand.Text()
@@ -126,7 +127,7 @@ func (s *shell) ready() {
 	s.tray, err = mygo.NewTray(mygo.TrayOptions{
 		Icon:           trayIcon(true),
 		IconIsTemplate: true,
-		ToolTip:        "Bitwarden Mini",
+		ToolTip:        "Lense",
 	})
 	if err != nil {
 		log.Fatal("tray: ", err)
@@ -170,13 +171,13 @@ func (s *shell) ready() {
 func (s *shell) menu() *mygo.Menu {
 	a := s.a
 	return mygo.NewMenu([]*mygo.MenuItem{
-		{Label: "Open Bitwarden Mini", Accelerator: s.shortcut, Click: func(*mygo.MenuItem, *mygo.Window) { s.summon() }},
+		{Label: "Open Lense", Accelerator: s.shortcut, Click: func(*mygo.MenuItem, *mygo.Window) { s.summon() }},
 		{Label: "Lock", Disabled: !a.unlocked(), Click: func(*mygo.MenuItem, *mygo.Window) { a.lock(false); s.redraw() }},
 		mygo.Separator(),
 		{Label: "Open Bitwarden", Click: func(*mygo.MenuItem, *mygo.Window) { a.openBitwarden() }},
 		{Label: "Settings…", Click: func(*mygo.MenuItem, *mygo.Window) { a.openSettings(); s.show() }},
 		mygo.Separator(),
-		{Label: "Quit Bitwarden Mini", Click: func(*mygo.MenuItem, *mygo.Window) { a.quit() }},
+		{Label: "Quit Lense", Click: func(*mygo.MenuItem, *mygo.Window) { a.quit() }},
 	})
 }
 
@@ -402,7 +403,7 @@ func (s *shell) showGuides(g guides) {
 	b := mygo.Rectangle{X: g.work.X, Y: g.work.Y, Width: g.work.W, Height: g.work.H}
 	if s.guideWin == nil {
 		s.guideWin = mygo.NewWindow(mygo.WindowOptions{
-			Title:             "Bitwarden Mini Guides",
+			Title:             "Lense Guides",
 			X:                 b.X,
 			Y:                 b.Y,
 			Width:             b.Width,
@@ -634,9 +635,9 @@ func (m *macSystem) openDetail(id string) { mygo.RunOnMain(func() { m.s.openDeta
 
 func main() {
 	// Debuggers, and what reads memory through them, keep out of the
-	// vault: BWMINI_DEBUG lets them in, to debug the app. memguard keeps
+	// vault: LENSE_DEBUG lets them in, to debug the app. memguard keeps
 	// the system from dumping its memory already.
-	if os.Getenv("BWMINI_DEBUG") == "" {
+	if os.Getenv("LENSE_DEBUG") == "" {
 		if err := macos.DenyDebuggers(); err != nil {
 			log.Print(err)
 		}

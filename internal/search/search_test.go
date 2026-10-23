@@ -4,9 +4,9 @@ import (
 	"slices"
 	"testing"
 
-	"bitwarden-mini/internal/bw"
-	"bitwarden-mini/internal/bw/bwtest"
-	"bitwarden-mini/internal/search"
+	"lense/internal/bw"
+	"lense/internal/bw/bwtest"
+	"lense/internal/search"
 )
 
 func sample(t *testing.T) *search.Index {

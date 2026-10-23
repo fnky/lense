@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"bitwarden-mini/internal/bw"
+	"lense/internal/bw"
 )
 
 // desktop is the desktop app's end of the socket, as its biometric

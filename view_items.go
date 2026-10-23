@@ -6,9 +6,9 @@ import (
 	"time"
 	"unicode"
 
-	"bitwarden-mini/internal/bw"
-	"bitwarden-mini/internal/search"
-	"bitwarden-mini/internal/totp"
+	"lense/internal/bw"
+	"lense/internal/search"
+	"lense/internal/totp"
 
 	"github.com/egoist/mygo/plugins/glass"
 	"github.com/egoist/mygo/transfer"

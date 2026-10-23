@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"bitwarden-mini/internal/macos"
-	"bitwarden-mini/internal/search"
+	"lense/internal/macos"
+	"lense/internal/search"
 )
 
 // fillInto types a login into the app the user was in: its username into

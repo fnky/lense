@@ -4,8 +4,8 @@ import (
 	"strconv"
 	"strings"
 
-	"bitwarden-mini/internal/bw"
-	"bitwarden-mini/internal/macos"
+	"lense/internal/bw"
+	"lense/internal/macos"
 
 	"github.com/egoist/mygo/ui"
 )

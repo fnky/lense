@@ -136,7 +136,7 @@ func IsBrowser(bundleID string) bool {
 }
 
 // BrowserURL returns the address of the page the browser shows, asking
-// it with AppleScript: macOS asks the user, once, to let Bitwarden Mini
+// it with AppleScript: macOS asks the user, once, to let Lense
 // do so. Firefox does not tell.
 func BrowserURL(ctx context.Context, bundleID string) (string, error) {
 	kind, ok := browsers[bundleID]

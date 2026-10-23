@@ -28,7 +28,7 @@ import (
 	"syscall"
 	"time"
 
-	"bitwarden-mini/internal/bw"
+	"lense/internal/bw"
 )
 
 // SocketPaths returns where the desktop app's socket may be: in its app

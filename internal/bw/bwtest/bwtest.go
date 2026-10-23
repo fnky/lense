@@ -13,7 +13,7 @@ import (
 	"sync"
 	"testing"
 
-	"bitwarden-mini/internal/bw"
+	"lense/internal/bw"
 )
 
 // Fixture is an account of the desktop app, with a personal vault and an

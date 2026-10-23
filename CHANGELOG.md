@@ -1,14 +1,14 @@
 # Changelog
 
-All notable changes to Bitwarden Mini are recorded here. The format follows
+All notable changes to Lense are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
 ## 0.1.0 - Unreleased
 
-The first version: Quick Access for the Bitwarden desktop app, in the macOS
+The first version: Quick Access for the Bitwarden® desktop app, in the macOS
 menu bar. It reads the vault the desktop app keeps on the Mac and makes no
-requests to Bitwarden's servers.
+requests to Bitwarden's servers. Free and open source, under the MIT license.
 
 ### Added
 
@@ -17,8 +17,8 @@ requests to Bitwarden's servers.
 - Unlock with Touch ID through the Bitwarden desktop app, over its local
   socket, as Bitwarden's browser extensions do. Unlock with Touch ID opens
   Bitwarden, out of the way, when it isn't running, and waits for it to answer.
-- Unlock with Touch ID of this Mac after Mini locked itself: the Secure Enclave
-  seals the account's key until Mini quits.
+- Unlock with Touch ID of this Mac after Lense locked itself: the Secure Enclave
+  seals the account's key until Lense quits.
 - Unlock with the master password, offline, with PBKDF2 or Argon2id, as the
   account uses.
 - Touch ID is asked for as you show the window with its shortcut or the menu
@@ -88,8 +88,8 @@ requests to Bitwarden's servers.
   open them for each decryption alone. Locking forgets the vault.
 - The answers from Bitwarden that carry the account's key are wiped after use.
 - The master password fields turn on Secure Event Input, as macOS's own do.
-- Debuggers can't attach (set `BWMINI_DEBUG=1` to allow them), and core dumps
+- Debuggers can't attach (set `LENSE_DEBUG=1` to allow them), and core dumps
   are off.
-- Screenshots and screen recordings leave Mini's windows out, unless you allow
+- Screenshots and screen recordings leave Lense's windows out, unless you allow
   them in Settings.
 - Builds signed with a certificate run under the hardened runtime.

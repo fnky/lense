@@ -1,12 +1,12 @@
 {
-  "name": "Bitwarden Mini",
-  "identifier": "com.example.bitwarden-mini",
+  "name": "Lense",
+  "identifier": "io.cbp.lense",
   "version": "0.1.0",
   "out": "build",
   "macos": {
     "infoPlist": {
       "LSUIElement": true,
-      "NSAppleEventsUsageDescription": "Bitwarden Mini asks your browser for the page it shows, to suggest its logins and to fill the website it opens."
+      "NSAppleEventsUsageDescription": "Lense asks your browser for the page it shows, to suggest its logins and to fill the website it opens."
     },
     "entitlements": "entitlements.plist"
   }
