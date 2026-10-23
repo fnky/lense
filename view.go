@@ -129,6 +129,8 @@ func (a *app) view(c *ui.Context) {
 			a.setupView(c, k)
 		case a.page == pageSettings:
 			a.settingsView(c, k)
+		case a.page == pageAcknowledgements:
+			a.acknowledgementsView(c, k)
 		case !a.unlocked():
 			a.lockedView(c, k)
 		default:

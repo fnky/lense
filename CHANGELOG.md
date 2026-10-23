@@ -78,6 +78,7 @@ requests to Bitwarden's servers. Free and open source, under the MIT license.
 - Every key of Quick Access can be changed, its shortcut included.
 - Idle lock, lock on sleep, Touch ID, screen capture, window material,
   tooltips, and how soon copied secrets clear.
+- Acknowledgements of Bitwarden, and of MyGo, with its license.
 
 ### Security
 

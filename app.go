@@ -96,6 +96,7 @@ const (
 	pageItems page = iota
 	pageSetup
 	pageSettings
+	pageAcknowledgements // of the settings
 )
 
 // problem is something that went wrong, said so that the user can fix it.
@@ -248,6 +249,7 @@ type app struct {
 	detailBand   band
 	windowBands  map[string]*band
 	settingsBand band
+	thanksBand   band // the acknowledgements'
 	vaultBand    band
 
 	// holdOpen keeps the window open as it loses the focus: to Touch ID,
@@ -1126,6 +1128,8 @@ func (a *app) escape() {
 		a.prob = nil
 	case a.mode == modeVaults:
 		a.setMode(modeResults)
+	case a.page == pageAcknowledgements:
+		a.page = pageSettings
 	case a.page == pageSettings && a.recordID != "":
 		a.recordID = ""
 	case a.page == pageSettings && a.configured():

@@ -117,6 +117,7 @@ func (a *app) settingsView(c *ui.Context, k ink) {
 			a.shortcutsSection(c.Key("keys"), k)
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Margin(4, 0, 0, 0).FontSize(11).TextColor(k.faint).Children(func() {
 				ui.Text(c, "Lense "+a.version).Grow(1)
+				textButton(c.Key("thanks"), k, "Acknowledgements", nil).OnClick(func() { a.page = pageAcknowledgements })
 				textButton(c.Key("quit"), k, "Quit Lense", nil).OnClick(a.quit)
 			})
 		})

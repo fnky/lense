@@ -6,6 +6,7 @@ import (
 	"errors"
 	"image/png"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -795,6 +796,51 @@ func TestNoData(t *testing.T) {
 	h.settle()
 	h.click("Unlock with Touch ID")
 	h.has("Sign in to Bitwarden first")
+}
+
+func TestAcknowledgements(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.unlock()
+	h.tt.SetSize(windowWidth, 2400) // all of the settings, unscrolled
+	h.key(ui.Cmd, ui.KeyComma)
+	h.click("Acknowledgements")
+	if h.a.page != pageAcknowledgements {
+		t.Fatalf("page %v", h.a.page)
+	}
+	h.has("Bitwarden", "Lense is not affiliated with or endorsed by Bitwarden, Inc.", "MyGo", "MIT License")
+	h.tt.SetSize(windowWidth, windowHeight)
+	snapshot(t, h.tt, "acknowledgements")
+	h.tt.SetSize(windowWidth, 2400)
+	h.click("Open bitwarden.com")
+	h.click("Open github.com/egoist/mygo")
+	if !slices.Equal(h.sys.opened, []string{"https://bitwarden.com", "https://github.com/egoist/mygo"}) {
+		t.Fatalf("opened %q", h.sys.opened)
+	}
+	// Esc goes back to the settings, then out of them.
+	h.key(0, ui.KeyEscape)
+	if h.a.page != pageSettings {
+		t.Fatalf("page %v", h.a.page)
+	}
+	h.click("Acknowledgements")
+	h.click("Settings")
+	if h.a.page != pageSettings {
+		t.Fatalf("back: page %v", h.a.page)
+	}
+}
+
+// The license the app carries is the one of the MyGo it is built with.
+func TestMyGoLicenseIsCurrent(t *testing.T) {
+	out, err := exec.Command("go", "list", "-m", "-f", "{{.Dir}}", "github.com/egoist/mygo").Output()
+	if err != nil {
+		t.Skip("no go command: ", err)
+	}
+	b, err := os.ReadFile(filepath.Join(strings.TrimSpace(string(out)), "LICENSE"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != mygoLicense {
+		t.Fatal("MyGo's license changed: copy its LICENSE to licenses/mygo.txt")
+	}
 }
 
 func TestSettings(t *testing.T) {

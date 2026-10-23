@@ -178,7 +178,8 @@ Filters combine with words and with each other, and complete as you type `=`.
 
 Lense is released under the [MIT license](LICENSE). The libraries it is built
 with keep their own licenses: MyGo (MIT), memguard and purego (Apache 2.0),
-and Go's `x/crypto` and `x/sys` (BSD).
+and Go's `x/crypto` and `x/sys` (BSD). Settings → Acknowledgements thanks
+Bitwarden and MyGo, and carries MyGo's license, from `licenses/mygo.txt`.
 
 Bitwarden is a trademark or registered trademark of Bitwarden, Inc. in the
 United States and/or other countries.
