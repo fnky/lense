@@ -47,21 +47,28 @@ This builds a development bundle, launches it, and rebuilds it as the code
 changes. Build the app and a disk image with:
 
 ```sh
-go tool mygo build
+go tool mygo build -sign "Apple Development" -skip-notarize
 ```
 
-The result is in `build/darwin-arm64/`. A build you distribute from a fork
-needs a bundle identifier of its own in `mygo.json`, in place of
-`io.cbp.lense`.
+The result is in `build/darwin-arm64/`. Signed with a certificate of yours,
+such as the Apple Development one Xcode makes, each build stays the same app
+to macOS, which keeps the Accessibility permission it gave the last; signed ad
+hoc (`-sign -`), each build is a new app, and the switch in System Settings
+stays on but no longer applies.
 
-Signed ad hoc, as it is by default, each build is a new app to macOS, which
-forgets the Accessibility permission it gave the last one: the switch in
-System Settings stays on, but no longer applies. Sign it with a certificate of
-yours, such as the Apple Development one Xcode makes, and macOS keeps it:
+### Release
+
+`go tool mygo build`, without flags, builds a release: signed with the Developer
+ID of `mygo.json`, and notarized by Apple, so that Gatekeeper opens it on any
+Mac. It needs that Developer ID in your keychain, and the notary service's
+credentials stored once as `notary`:
 
 ```sh
-go tool mygo build -sign "Apple Development"
+xcrun notarytool store-credentials notary
 ```
+
+A build you distribute from a fork needs a bundle identifier and a Developer ID
+of its own in `mygo.json`, in place of `io.cbp.lense` and this one.
 
 ## Use it
 

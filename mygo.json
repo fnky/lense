@@ -8,6 +8,10 @@
       "LSUIElement": true,
       "NSAppleEventsUsageDescription": "Lense asks your browser for the page it shows, to suggest its logins and to fill the website it opens."
     },
-    "entitlements": "entitlements.plist"
+    "entitlements": "entitlements.plist",
+    "signingIdentity": "Developer ID Application: CHRISTIAN BENDER PETERSEN (53QF444WLE)",
+    "notarize": {
+      "keychainProfile": "notary"
+    }
   }
 }
