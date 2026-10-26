@@ -21,9 +21,9 @@ too, into a draft release, which is published once it is checked.
    ```
 
    The [Release](.github/workflows/release.yml) workflow drafts the release
-   of the tag, and uploads the builds to it. Run by hand on a branch instead,
-   it tags `mygo.json`'s version at the branch's commit, replacing the draft
-   and tag of that version, if any.
+   of the tag, and uploads the builds to it. It signs and notarizes with the
+   secrets of the `macOS Distribution` environment, which admits tags of a
+   version (`v*.*.*`) alone: a run by hand on a branch can't sign.
 4. Wait for the release to finish:
 
    ```sh

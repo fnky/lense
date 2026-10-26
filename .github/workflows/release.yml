@@ -52,6 +52,9 @@ jobs:
     needs: draft-release
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
+    # Its secrets, which sign and notarize, are the environment's: for tags
+    # of a version (v*.*.*) alone.
+    environment: macOS Distribution
     strategy:
       fail-fast: false
       matrix:
