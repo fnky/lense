@@ -10,8 +10,8 @@ too, into a draft release, which is published once it is checked.
    people who use Lense, not for developers. Name settings as they are displayed
    in the app (Settings › Security), credit outside contributors (Thanks @name).
    Leave out unnoticable changes and fixes that were not confirmed to work.
-3. Commit them: `Release X.Y.Z`, tag it `vX.Y.Z` and push `main` with the tag:
-4. Tag the commit with the version, and push both:
+3. Commit them as `Release X.Y.Z`, tag the commit `vX.Y.Z`, and push `main`
+   with the tag:
 
    ```sh
    git commit -am "Release X.Y.Z"
@@ -24,11 +24,13 @@ too, into a draft release, which is published once it is checked.
    of the tag, and uploads the builds to it. Run by hand on a branch instead,
    it tags `mygo.json`'s version at the branch's commit, replacing the draft
    and tag of that version, if any.
-5. Wait for the release to finish:
-   ```
+4. Wait for the release to finish:
+
+   ```sh
    gh run list --workflow release.yml --limit 1
    gh run watch <run id> --exit-status
    ```
+
 5. Once the Release run succeeded, check the draft on GitHub: the disk images,
    for Apple silicon and universal, and MyGo's update archives. Give it the
    notes of the version's section in `CHANGELOG.md`.
