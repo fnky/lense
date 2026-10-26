@@ -75,9 +75,10 @@ xcrun notarytool store-credentials notary
 ```
 
 On GitHub, [the release workflow](.github/workflows/release.yml), MyGo's, does
-this as `main` is pushed: it tags the version of `mygo.json` at that commit, and
-uploads the builds to its draft release, which you review and publish. Once the
-version is published, pushes leave it be until `mygo.json` has the next. The
+this as a tag of the version of `mygo.json` is pushed (`v0.2.0`), or as you run
+it by hand on a branch, which tags that version at the branch's commit: it
+uploads the builds to the version's draft release, which you review and
+publish. The
 release also holds the signed update archives that MyGo's upload makes (see
 [auto-updates](https://github.com/egoist/mygo/blob/main/docs/updates.md)):
 Lense itself never looks for them. The workflow takes these secrets of the

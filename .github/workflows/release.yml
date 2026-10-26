@@ -1,12 +1,11 @@
 name: Release
 
 on:
-  # A push to main, or a run by hand, releases mygo.json's version from the
-  # branch, in a new draft: the draft of the version, if there is one, and
-  # its tag go, so the release is of this commit. A published release stays:
-  # pushes leave it be until the version is bumped.
   push:
-    branches: [main]
+    tags: ["v*"]
+  # Run by hand, it releases mygo.json's version from the branch it runs
+  # on, in a new draft: the draft of the version, if there is one, and its
+  # tag go, so the release is of this commit. A published release stays.
   workflow_dispatch:
 
 permissions:
@@ -15,27 +14,22 @@ permissions:
 jobs:
   draft-release:
     runs-on: ubuntu-latest
-    outputs:
-      release: ${{ steps.draft.outputs.release }}
     steps:
       - uses: actions/checkout@v7
+      - name: Check the tag against mygo.json's version
+        if: github.event_name == 'push'
+        run: test "$GITHUB_REF_NAME" = "v$(jq -r .version mygo.json)"
       - name: Replace the draft release
-        id: draft
+        if: github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag="v$(jq -r .version mygo.json)"
           draft="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null || true)"
           if [ "$draft" = "false" ]; then
-            if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
-              echo "::error::$tag is published already: bump the version in mygo.json"
-              exit 1
-            fi
-            echo "::notice::$tag is published already: bump the version in mygo.json to release the next"
-            echo "release=false" >> "$GITHUB_OUTPUT"
-            exit 0
+            echo "::error::$tag is published already: bump the version in mygo.json"
+            exit 1
           fi
-          echo "release=true" >> "$GITHUB_OUTPUT"
           if [ "$draft" = "true" ]; then
             gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes
           fi
@@ -45,7 +39,6 @@ jobs:
           git tag "$tag" "$GITHUB_SHA"
           git push origin "refs/tags/$tag"
       - name: Create the draft release
-        if: steps.draft.outputs.release == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -57,7 +50,6 @@ jobs:
 
   build:
     needs: draft-release
-    if: needs.draft-release.outputs.release == 'true'
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -105,7 +97,6 @@ jobs:
   # What a release is of passes its tests, as from a branch run by hand.
   test:
     needs: draft-release
-    if: needs.draft-release.outputs.release == 'true'
     name: Test
     runs-on: ubuntu-latest
     steps:
