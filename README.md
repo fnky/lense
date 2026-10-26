@@ -74,18 +74,23 @@ credentials stored once as `notary`:
 xcrun notarytool store-credentials notary
 ```
 
-On GitHub, [the release workflow](.github/workflows/release.yml) does this as
-`main` is pushed: it releases the version of `mygo.json` once `CHANGELOG.md`
-dates it (`## 0.2.0 - 2026-11-30`), with the disk images, their checksums and
-the version's notes, unless that version is released already. It takes the
-Developer ID and the notary credentials from the repository's secrets:
+On GitHub, [the release workflow](.github/workflows/release.yml), MyGo's, does
+this as `main` is pushed: it tags the version of `mygo.json` at that commit, and
+uploads the builds to its draft release, which you review and publish. Once the
+version is published, pushes leave it be until `mygo.json` has the next. The
+release also holds the signed update archives that MyGo's upload makes (see
+[auto-updates](https://github.com/egoist/mygo/blob/main/docs/updates.md)):
+Lense itself never looks for them. The workflow takes these secrets of the
+repository:
 
 | Secret | What it holds |
 |---|---|
 | `MACOS_CERTIFICATE` | The Developer ID Application certificate and its private key, exported as a `.p12` file, in base64 |
 | `MACOS_CERTIFICATE_PASSWORD` | The password the `.p12` file was exported with |
 | `APPLE_ID` | The Apple ID of the developer account |
+| `APPLE_TEAM_ID` | The team of the Developer ID: `53QF444WLE` |
 | `APPLE_APP_PASSWORD` | An app-specific password of that Apple ID, for the notary service |
+| `MYGO_UPDATER_PRIVATE_KEY` | The key that signs the update archives, from `mygo keygen`, whose public half is `updates.publicKey` in `mygo.json` |
 
 A build you distribute from a fork needs a bundle identifier and a Developer ID
 of its own in `mygo.json`, in place of `io.cbp.lense` and this one.

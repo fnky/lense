@@ -13,5 +13,9 @@
     "notarize": {
       "keychainProfile": "notary"
     }
+  },
+  "updates": {
+    "publicKey": "Pa0O6LiKW0X+oj1837D93hi6jRMg66L5ZDnYqul+O4g=",
+    "github": "fnky/lense"
   }
 }
