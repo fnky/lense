@@ -74,6 +74,19 @@ credentials stored once as `notary`:
 xcrun notarytool store-credentials notary
 ```
 
+On GitHub, [the release workflow](.github/workflows/release.yml) does this as
+`main` is pushed: it releases the version of `mygo.json` once `CHANGELOG.md`
+dates it (`## 0.2.0 - 2026-11-30`), with the disk images, their checksums and
+the version's notes, unless that version is released already. It takes the
+Developer ID and the notary credentials from the repository's secrets:
+
+| Secret | What it holds |
+|---|---|
+| `MACOS_CERTIFICATE` | The Developer ID Application certificate and its private key, exported as a `.p12` file, in base64 |
+| `MACOS_CERTIFICATE_PASSWORD` | The password the `.p12` file was exported with |
+| `APPLE_ID` | The Apple ID of the developer account |
+| `APPLE_APP_PASSWORD` | An app-specific password of that Apple ID, for the notary service |
+
 A build you distribute from a fork needs a bundle identifier and a Developer ID
 of its own in `mygo.json`, in place of `io.cbp.lense` and this one.
 

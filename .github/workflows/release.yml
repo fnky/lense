@@ -1,0 +1,181 @@
+name: Release
+
+# A push to main releases the version of mygo.json, once CHANGELOG.md dates
+# it ("## 0.2.0 - 2026-11-30"), unless it is released already: from its tag
+# when it has one, else from the commit pushed, which it tags. The release
+# holds the disk images for Apple silicon and the universal ones, signed with
+# the Developer ID of mygo.json and notarized, their checksums, and the
+# version's notes from CHANGELOG.md.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Check the version
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.version.outputs.release }}
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      ref: ${{ steps.version.outputs.ref }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the tags
+      - id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(jq -r .version mygo.json)"
+          tag="v$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "$tag is released already: bump the version in mygo.json for the next." >> "$GITHUB_STEP_SUMMARY"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          heading="$(grep -m1 -F "## $version - " CHANGELOG.md || true)"
+          if [ -z "$heading" ] || echo "$heading" | grep -qi unreleased; then
+            echo "$version isn't dated in CHANGELOG.md yet: date it to release it." >> "$GITHUB_STEP_SUMMARY"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git rev-parse -q --verify "refs/tags/$tag" > /dev/null; then
+            ref="$(git rev-parse "$tag^{commit}")"
+          else
+            ref="$GITHUB_SHA"
+          fi
+          echo "Releasing $tag from $ref." >> "$GITHUB_STEP_SUMMARY"
+          echo "release=true" >> "$GITHUB_OUTPUT"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
+  test:
+    name: Test
+    needs: prepare
+    if: needs.prepare.outputs.release == 'true'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test ./...
+
+  build:
+    name: Build, sign and notarize
+    needs: [prepare, test]
+    if: needs.prepare.outputs.release == 'true'
+    runs-on: macos-latest
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      # mygo.json signs with its Developer ID, and notarizes with its
+      # keychain profile: both go into a keychain of the job's own. The team
+      # is the one of the Developer ID.
+      - name: Import the Developer ID and the notary credentials
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          password="$(openssl rand -base64 24)"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" \
+            -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/certificate.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain"
+          security list-keychains -d user -s "$keychain" login.keychain
+          team="$(jq -r .macos.signingIdentity mygo.json | sed -E 's/.*\(([A-Z0-9]+)\)$/\1/')"
+          profile="$(jq -r .macos.notarize.keychainProfile mygo.json)"
+          xcrun notarytool store-credentials "$profile" --keychain "$keychain" \
+            --apple-id "$APPLE_ID" --team-id "$team" --password "$APPLE_APP_PASSWORD"
+          jq --arg k "$keychain" '.macos.notarize.keychain = $k' mygo.json > "$RUNNER_TEMP/mygo.json"
+          mv "$RUNNER_TEMP/mygo.json" mygo.json
+      - name: Build
+        run: go tool mygo build -platform darwin/arm64,darwin/universal
+      - name: Check that Gatekeeper accepts them
+        run: |
+          lipo build/darwin-universal/Lense.app/Contents/MacOS/Lense -verify_arch arm64 x86_64
+          for app in build/darwin-*/Lense.app; do
+            spctl --assess --type exec -vv "$app"
+            xcrun stapler validate "$app"
+          done
+          for dmg in build/darwin-*/*.dmg; do
+            spctl --assess --type open --context context:primary-signature -vv "$dmg"
+            xcrun stapler validate "$dmg"
+          done
+      - name: Name the disk images for download
+        run: |
+          mkdir dist
+          cp "build/darwin-arm64/Lense $VERSION arm64.dmg" "dist/Lense-$VERSION-arm64.dmg"
+          cp "build/darwin-universal/Lense $VERSION.dmg" "dist/Lense-$VERSION-universal.dmg"
+          (cd dist && shasum -a 256 *.dmg > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release
+          path: dist/
+          if-no-files-found: error
+
+  release:
+    name: Release
+    needs: [prepare, build]
+    if: needs.prepare.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # the tag, the release and its files
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+      REF: ${{ needs.prepare.outputs.ref }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: release
+          path: dist
+      - name: Tag and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes="$RUNNER_TEMP/notes.md"
+          # The version's section of CHANGELOG.md, without its heading.
+          awk -v h="## $VERSION - " 'index($0, h) == 1 { on = 1; next } /^## / { on = 0 } on' CHANGELOG.md > "$notes"
+          {
+            echo
+            echo "### Downloads"
+            echo
+            echo "- **Lense-$VERSION-arm64.dmg**, for Macs with Apple silicon"
+            echo "- **Lense-$VERSION-universal.dmg**, for Macs with Apple silicon or Intel"
+            echo
+            echo '```'
+            cat dist/SHA256SUMS.txt
+            echo '```'
+          } >> "$notes"
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" \
+            --target "$REF" --title "Lense $VERSION" --notes-file "$notes"
