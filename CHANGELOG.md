@@ -4,11 +4,13 @@ All notable changes to Lense are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
-## 0.1.0 - Unreleased
+## 0.1.0 - 2026-10-26
 
 The first version: Quick Access for the Bitwarden® desktop app, in the macOS
 menu bar. It reads the vault the desktop app keeps on the Mac and makes no
 requests to Bitwarden's servers. Free and open source, under the MIT license.
+Signed with a Developer ID and notarized, for Apple silicon, and as a
+universal app for Intel Macs too.
 
 ### Added
 

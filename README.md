@@ -58,9 +58,16 @@ stays on but no longer applies.
 
 ### Release
 
-`go tool mygo build`, without flags, builds a release: signed with the Developer
-ID of `mygo.json`, and notarized by Apple, so that Gatekeeper opens it on any
-Mac. It needs that Developer ID in your keychain, and the notary service's
+`go tool mygo build`, without `-sign`, builds a release: signed with the
+Developer ID of `mygo.json`, and notarized by Apple, so that Gatekeeper opens it
+on any Mac. A release ships for Apple silicon, and as a universal app for Intel
+Macs too:
+
+```sh
+go tool mygo build -platform darwin/arm64,darwin/universal
+```
+
+It needs that Developer ID in your keychain, and the notary service's
 credentials stored once as `notary`:
 
 ```sh
