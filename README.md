@@ -58,43 +58,8 @@ stays on but no longer applies.
 
 ### Release
 
-`go tool mygo build`, without `-sign`, builds a release: signed with the
-Developer ID of `mygo.json`, and notarized by Apple, so that Gatekeeper opens it
-on any Mac. A release ships for Apple silicon, and as a universal app for Intel
-Macs too:
-
-```sh
-go tool mygo build -platform darwin/arm64,darwin/universal
-```
-
-It needs that Developer ID in your keychain, and the notary service's
-credentials stored once as `notary`:
-
-```sh
-xcrun notarytool store-credentials notary
-```
-
-On GitHub, [the release workflow](.github/workflows/release.yml), MyGo's, does
-this as a tag of the version of `mygo.json` is pushed (`v0.2.0`), or as you run
-it by hand on a branch, which tags that version at the branch's commit: it
-uploads the builds to the version's draft release, which you review and
-publish. The
-release also holds the signed update archives that MyGo's upload makes (see
-[auto-updates](https://github.com/egoist/mygo/blob/main/docs/updates.md)):
-Lense itself never looks for them. The workflow takes these secrets of the
-repository:
-
-| Secret | What it holds |
-|---|---|
-| `MACOS_CERTIFICATE` | The Developer ID Application certificate and its private key, exported as a `.p12` file, in base64 |
-| `MACOS_CERTIFICATE_PASSWORD` | The password the `.p12` file was exported with |
-| `APPLE_ID` | The Apple ID of the developer account |
-| `APPLE_TEAM_ID` | The team of the Developer ID: `53QF444WLE` |
-| `APPLE_APP_PASSWORD` | An app-specific password of that Apple ID, for the notary service |
-| `MYGO_UPDATER_PRIVATE_KEY` | The key that signs the update archives, from `mygo keygen`, whose public half is `updates.publicKey` in `mygo.json` |
-
-A build you distribute from a fork needs a bundle identifier and a Developer ID
-of its own in `mygo.json`, in place of `io.cbp.lense` and this one.
+[RELEASING.md](RELEASING.md) says how a release is made: built, signed and
+notarized on GitHub into a draft release, then published.
 
 ## Use it
 
