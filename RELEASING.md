@@ -32,8 +32,9 @@ too, into a draft release, which is published once it is checked.
    ```
 
 5. Once the Release run succeeded, check the draft on GitHub: the disk images,
-   for Apple silicon and universal, and MyGo's update archives. Give it the
-   notes of the version's section in `CHANGELOG.md`.
+   `lense-X.Y.Z-arm64.dmg` for Apple silicon and `lense-X.Y.Z.dmg`, universal,
+   MyGo's update archives, `install.sh` and `SHA256SUMS`. Give it the notes of
+   the version's section in `CHANGELOG.md`.
 6. Publish it: run the [Publish release](.github/workflows/publish-release.yml)
    workflow on `main`, or
 
