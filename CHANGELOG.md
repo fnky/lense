@@ -4,6 +4,13 @@ All notable changes to Lense are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+### Fixed
+
+- Settings show the version of Lense that runs: 0.2.0 said it was 0.1.0, in
+  Software Update and at the bottom of Settings.
+
 ## 0.2.0 - 2026-10-27
 
 ### Added

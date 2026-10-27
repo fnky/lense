@@ -22,8 +22,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-const version = "0.1.0"
-
 // shell is what lives as long as the app: the tray icon, the window while
 // it shows, the windows of items, and the app's state.
 type shell struct {
@@ -76,7 +74,11 @@ func (s *shell) ready() {
 	}
 	a := newApp(cfg, &bitwardenApp{appID: cfg.AppID}, &macSystem{s: s})
 	s.a = a
-	a.version = version
+	// The version mygo build packaged, from mygo.json: the one updates
+	// compare with.
+	if a.version = mygo.App.Version(); a.version == "" {
+		a.version = "dev"
+	}
 	a.post = func(fn func()) {
 		mygo.RunOnMain(func() {
 			fn()
