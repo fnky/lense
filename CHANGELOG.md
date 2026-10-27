@@ -6,6 +6,14 @@ All notable changes to Lense are recorded here. The format follows
 
 ## 0.2.0 - 2026-10-27
 
+### Added
+
+- Settings › Software Update: Check for Updates…, or Automatic updates, which
+  check once a day and download an update, to install as Lense restarts. They
+  are off until you turn them on: Lense goes online for nothing else, and then
+  only to its releases on GitHub. Lense 0.1.0 doesn't update itself: install
+  this version by hand.
+
 ### Fixed
 
 - Lense no longer starts macOS's AutoFill helper as it opens, which could use

@@ -10,9 +10,12 @@ under the [MIT license](LICENSE). Built with
 Lense is an independent project, not affiliated with or endorsed by
 Bitwarden, Inc.
 
-Lense makes no requests to Bitwarden's servers. It reads the vault
-the desktop app keeps on the Mac (`data.json`, which holds it encrypted), and
-decrypts it with:
+Lense makes no requests to Bitwarden's servers, and goes online for nothing
+but its own updates, from its releases on GitHub: when you click Check for
+Updates… in Settings › Software Update, or once a day with Automatic updates
+on, which they are not until you turn them on. An update installs only with
+the signature of Lense's releases. Lense reads the vault the desktop app keeps
+on the Mac (`data.json`, which holds it encrypted), and decrypts it with:
 
 - **Touch ID, through the desktop app.** Lense asks Bitwarden over its local
   socket, as Bitwarden's browser extensions do. Bitwarden shows its Touch ID
