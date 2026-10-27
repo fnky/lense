@@ -4,6 +4,18 @@ All notable changes to Lense are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## 0.2.0 - 2026-10-27
+
+### Fixed
+
+- Lense no longer starts macOS's AutoFill helper as it opens, which could use
+  CPU and make scrolling stall.
+
+### Changed
+
+- The downloads are named `lense-0.2.0-arm64.dmg`, for Apple silicon, and
+  `lense-0.2.0.dmg`, universal, for Intel Macs too.
+
 ## 0.1.0 - 2026-10-26
 
 The first version: Quick Access for the Bitwarden® desktop app, in the macOS
