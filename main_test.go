@@ -219,9 +219,12 @@ type harness struct {
 	a    *app
 	desk *fakeDesktop
 	sys  *fakeSystem
+	upd  *fakeUpdater
 	r    *runner
 	tt   *ui.Tester
 	f    *bwtest.Fixture
+	// relaunched counts the restarts the app asked for.
+	relaunched int
 }
 
 // newHarness is the app, its account set up, on the sample vault, at 15:20
@@ -244,6 +247,9 @@ func newHarness(t *testing.T, f *bwtest.Fixture, configured bool) *harness {
 	h.a.now = func() time.Time { return time.Date(2026, 10, 19, 15, 20, 0, 0, time.UTC) }
 	h.a.sleep = func(time.Duration) {}
 	h.a.spawn, h.a.post = h.r.spawn, h.r.post
+	h.upd = &fakeUpdater{}
+	h.a.upd, h.a.updEnabled = h.upd, true
+	h.a.relaunch = func() { h.relaunched++ }
 	h.a.reload()
 	h.settle()
 	h.tt = ui.NewTester(h.a.view, windowWidth, windowHeight)
@@ -801,7 +807,7 @@ func TestNoData(t *testing.T) {
 func TestAcknowledgements(t *testing.T) {
 	h := newHarness(t, nil, true)
 	h.unlock()
-	h.tt.SetSize(windowWidth, 2400) // all of the settings, unscrolled
+	h.tt.SetSize(windowWidth, 3000) // all of the settings, unscrolled
 	h.key(ui.Cmd, ui.KeyComma)
 	h.click("Acknowledgements")
 	if h.a.page != pageAcknowledgements {
@@ -810,7 +816,7 @@ func TestAcknowledgements(t *testing.T) {
 	h.has("Bitwarden", "Lense is not affiliated with or endorsed by Bitwarden, Inc.", "MyGo", "MIT License")
 	h.tt.SetSize(windowWidth, windowHeight)
 	snapshot(t, h.tt, "acknowledgements")
-	h.tt.SetSize(windowWidth, 2400)
+	h.tt.SetSize(windowWidth, 3000)
 	h.click("Open bitwarden.com")
 	h.click("Open github.com/egoist/mygo")
 	if !slices.Equal(h.sys.opened, []string{"https://bitwarden.com", "https://github.com/egoist/mygo"}) {

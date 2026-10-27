@@ -39,6 +39,10 @@ type config struct {
 	// AllowScreenCapture lets screenshots and screen recordings show the
 	// windows, which macOS leaves them out of otherwise.
 	AllowScreenCapture bool `json:"allowScreenCapture"`
+	// AutoUpdates checks for updates once a day, and installs them, for
+	// the restart: the one thing that takes the app online, so it's off
+	// until the user turns it on.
+	AutoUpdates bool `json:"autoUpdates"`
 
 	// Vault is the vault shown: "" all of them, "personal", or an
 	// organization's ID.

@@ -24,6 +24,7 @@ func (a *app) settingsView(c *ui.Context, k ink) {
 	off := a.settingsBand.offset(c)
 	view.Children(func() {
 		ui.Column(c).Padding(18, 28, 22, 28).Gap(22).Translate(0, off).Children(func() {
+			a.softwareUpdateSection(c.Key("update"), k)
 			section(c, k, "Account", func() {
 				settingRow(c, k, a.cfg.Email, a.accountStatus(), func() {
 					pushButton(c.Key("change"), k, "Change…", false).OnClick(a.startSetup)

@@ -268,8 +268,15 @@ type app struct {
 	keyErr      string
 	keyErrID    string
 
-	// exit quits the app.
-	exit func()
+	// exit quits the app, and relaunch restarts it.
+	exit     func()
+	relaunch func()
+
+	// upd updates the app, when updEnabled says this copy can, and update
+	// is how that goes.
+	upd        updater
+	updEnabled bool
+	update     softwareUpdate
 }
 
 func newApp(cfg config, desk desktop, sys system) *app {

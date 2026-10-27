@@ -95,6 +95,9 @@ func (s *shell) ready() {
 	a.onUnlock = s.updateTray
 	a.setShortcut = s.registerShortcut
 	a.exit = mygo.App.Quit
+	a.relaunch = mygo.App.Relaunch
+	a.upd = mygoUpdater{}
+	a.updEnabled = a.upd.enabled()
 	if a.configured() {
 		a.page = pageItems
 	}
@@ -154,6 +157,13 @@ func (s *shell) ready() {
 
 	a.reload()
 	go s.watch()
+	// Automatic updates check soon after launch, then once a day.
+	time.AfterFunc(firstUpdateCheck, func() {
+		a.post(a.autoUpdate)
+		for range time.Tick(updateInterval) {
+			a.post(a.autoUpdate)
+		}
+	})
 	switch {
 	case !a.configured():
 		// Nothing to search yet: show how to set it up.
@@ -629,6 +639,29 @@ func (m *macSystem) secureInput(on bool) { macos.SecureInput(on) }
 func (m *macSystem) scrollPhase() (phase, momentum macos.Phase) {
 	return macos.ScrollPhase()
 }
+
+// mygoUpdater updates the app with mygo.Updater, from the releases that
+// mygo.json's updates name.
+type mygoUpdater struct{}
+
+func (mygoUpdater) enabled() bool { return mygo.Updater.Enabled() }
+
+func (mygoUpdater) check(ctx context.Context) (availableUpdate, error) {
+	up, err := mygo.Updater.Check(ctx)
+	if err != nil || up == nil {
+		return nil, err
+	}
+	return mygoUpdate{up}, nil
+}
+
+type mygoUpdate struct{ up *mygo.Update }
+
+func (u mygoUpdate) version() string { return u.up.Version }
+
+func (u mygoUpdate) install(ctx context.Context, progress func(done, total int64)) error {
+	return u.up.Install(ctx, progress)
+}
+
 func (m *macSystem) show()                { mygo.RunOnMain(m.s.show) }
 func (m *macSystem) hide()                { mygo.RunOnMain(m.s.hide) }
 func (m *macSystem) openDetail(id string) { mygo.RunOnMain(func() { m.s.openDetail(id) }) }
