@@ -192,6 +192,33 @@ func (b *band) offset(c *ui.Context) float32 {
 	return b.off
 }
 
+// barInsets moves view's scroll bar in from its edges by inset, CSS style
+// as ScrollbarInsets, and in from the end opposite the one the content is
+// stretched past as it is off its place, as the band moved it in this
+// frame (offset): the thumb, pinned to that end, shrinks to the share of
+// the view that shows the content, as AppKit's knob does as the content
+// bounces.
+func (b *band) barInsets(view ui.Element, top, right, bottom, left float32) ui.Element {
+	top, bottom = squeeze(b.off, view.Bounds().H, top, bottom)
+	return view.ScrollbarInsets(top, right, bottom, left)
+}
+
+// squeeze returns the top and bottom insets of the scroll bar of a view
+// high h, whose content is off its place by off: the bar's track shorter by
+// the share of it off is of h, at the end the thumb is away from, so that
+// it shrinks as the share of the view the content shows (AppKit's knob
+// proportion, (visible − overhang) / content).
+func squeeze(off, h, top, bottom float32) (float32, float32) {
+	if off == 0 || h <= 0 {
+		return top, bottom
+	}
+	by := min(float32(math.Abs(float64(off))), h) * max(h-top-bottom, 0) / h
+	if off > 0 {
+		return top, bottom + by // past the top: the thumb at the top
+	}
+	return top + by, bottom
+}
+
 // eventGap is the time between two scroll events of a gesture, for its
 // velocity: a frame's at 60 Hz when it is unknown or too long to tell.
 func eventGap(d time.Duration) time.Duration {

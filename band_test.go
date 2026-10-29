@@ -197,3 +197,25 @@ func TestTheListStretchesAndGoesBack(t *testing.T) {
 		t.Fatalf("%v DIPs off its place, back", d)
 	}
 }
+
+func TestBandSqueezesTheScrollBar(t *testing.T) {
+	for _, c := range []struct {
+		off, h, top, bottom float32
+		wantTop, wantBottom float32
+	}{
+		{0, 400, 0, 36, 0, 36},
+		// Past the top, the thumb shows at the top, and shrinks from below,
+		// by the share of the view the content left: a tenth of its track.
+		{40, 400, 0, 36, 0, 36 + 36.4},
+		// Past the bottom, from above.
+		{-40, 400, 0, 0, 40, 0},
+		// No further than the whole track.
+		{900, 400, 0, 0, 0, 400},
+		{20, 0, 0, 0, 0, 0},
+	} {
+		top, bottom := squeeze(c.off, c.h, c.top, c.bottom)
+		if !near(top, c.wantTop) || !near(bottom, c.wantBottom) {
+			t.Errorf("squeeze(%v, %v, %v, %v) = %v, %v, want %v, %v", c.off, c.h, c.top, c.bottom, top, bottom, c.wantTop, c.wantBottom)
+		}
+	}
+}

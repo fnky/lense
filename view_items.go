@@ -156,6 +156,7 @@ func (a *app) vaultMenu(c *ui.Context, k ink) {
 	panel.Children(func() {
 		view := a.stretchy(ui.Scroll(c.Key("vault-scroll")), &a.vaultBand)
 		off := a.vaultBand.offset(c)
+		a.vaultBand.barInsets(view, 0, 0, 0, 0)
 		view.Children(func() {
 			ui.Column(c).Gap(1).Translate(0, off).Children(func() {
 				for _, v := range a.visibleVaults() {
@@ -280,9 +281,10 @@ func (a *app) vaultRow(c *ui.Context, k ink, v vaultChoice) {
 // itemList lists the rows found.
 func (a *app) itemList(c *ui.Context, k ink) {
 	list := ui.List(c.Key("items"), &a.list, len(a.rows), func(i int) { a.rowView(c, k, i) }).
-		Width(listWidth).Shrink(0).Padding(headerFade, 8, 6+footerHeight, 8).ScrollbarInsets(0, 0, footerHeight, 0).
+		Width(listWidth).Shrink(0).Padding(headerFade, 8, 6+footerHeight, 8).
 		Background(k.pane).BorderWidth(0, 1, 0, 0).BorderColor(k.line).Label("Items")
 	a.stretchy(list, &a.listBand)
+	a.listBand.barInsets(list, 0, 0, footerHeight, 0) // its offset, of this frame (itemsView)
 	list.Children(func() {
 		if len(a.rows) > 0 {
 			return
@@ -574,8 +576,9 @@ func (a *app) details(c *ui.Context, k ink, it *bw.Item, own bool) {
 		b = a.windowBand(it.ID)
 	}
 	b.show(it.ID)
-	view := a.stretchy(ui.Scroll(c.Key("detail-"+it.ID)).Fill().ScrollbarInsets(0, 0, bottom-16, 0), b)
+	view := a.stretchy(ui.Scroll(c.Key("detail-"+it.ID)).Fill(), b)
 	off := b.offset(c)
+	b.barInsets(view, 0, 0, bottom-16, 0)
 	view.Children(func() {
 		ui.Column(c).Padding(18, 18, bottom, 18).Gap(16).Translate(0, off).Children(func() {
 			ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
