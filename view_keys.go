@@ -174,15 +174,14 @@ func (a *app) recorderPopover(c *ui.Context, k ink, anchor ui.Element) {
 				}
 			}
 		})
-		say, tone, weight := "Recording…", k.muted, 500
+		say, tone := "Recording…", k.muted
 		switch r.state {
 		case recAccepted:
-			say, tone, weight = "New hotkey is set!", k.okay, 600
+			say, tone = "New hotkey is set!", k.okay
 		case recRefused:
-			say, tone, weight = r.why, k.danger, 400
+			say, tone = r.why, k.danger
 		}
-		ui.Text(c, say).FontSize(11.5).FontWeight(weight).TextColor(tone).LineHeight(1.35).
-			TextAlign(ui.Center).AlignSelf(ui.Stretch)
+		ui.Text(c, say).FontSize(11.5).TextColor(tone).LineHeight(1.35).TextAlign(ui.Center).AlignSelf(ui.Stretch)
 	})
 	if !open && a.rec == r {
 		a.rec = nil // Escape, or a press outside it
