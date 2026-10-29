@@ -54,6 +54,8 @@ func ScrollPhase() (phase, momentum Phase)               { return 0, 0 }
 func BarMaterial(nsWindow uintptr, height, radius float64, material int) uintptr {
 	return 0
 }
+func CatchCommandPeriod(take func(nsWindow uintptr, shift, ctrl, alt bool) bool) {
+}
 func ShowBar(view uintptr, show bool)             {}
 func SecureInput(on bool)                         {}
 func DenyDebuggers() error                        { return nil }

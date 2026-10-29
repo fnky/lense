@@ -162,12 +162,12 @@ func (a *app) syncBar() {
 // edit with some; a key being recorded, or the master password asked for,
 // takes them all.
 func (a *app) windowKeys(c *ui.Context) {
-	items := a.configured() && a.page == pageItems && a.unlocked()
+	items := a.inItems()
 	if a.rec != nil || a.confirm != nil || items && a.search.Focused(c) {
 		return
 	}
 	for _, act := range actions {
-		if act.scope == inGlobal || !items && act.scope != inWindow || items && !act.scope.covers(a.mode) {
+		if !a.acts(act, items) {
 			continue
 		}
 		id := act.id
@@ -177,6 +177,38 @@ func (a *app) windowKeys(c *ui.Context) {
 			}
 		}
 	}
+}
+
+// inItems reports whether the window shows the vault's items, where all
+// the actions of the mode work; elsewhere, those of the window.
+func (a *app) inItems() bool { return a.configured() && a.page == pageItems && a.unlocked() }
+
+// acts reports whether an action's keys act in the window, as it shows
+// the items or not.
+func (a *app) acts(act action, items bool) bool {
+	return act.scope != inGlobal && (items && act.scope.covers(a.mode) || !items && act.scope == inWindow)
+}
+
+// keyMissed takes a key AppKit keeps from the window, ⌘., which it makes
+// Escape's cancel: the recorder records it, and the action it's a key of
+// does what it does. It reports whether it took the key.
+func (a *app) keyMissed(mods ui.Modifiers, key ui.Key) bool {
+	switch {
+	case a.rec != nil:
+		a.recordKey(mods, key)
+		return true
+	case a.confirm != nil:
+		return false
+	}
+	items := a.inItems()
+	act, ok := actionByID(a.cfg.actionFor(a.mode, mods, key))
+	switch {
+	case !ok || !a.acts(act, items):
+		return false
+	case items:
+		return a.press(mods, key)
+	}
+	return a.run(act.id)
 }
 
 func (a *app) openSettings() {

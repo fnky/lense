@@ -972,6 +972,25 @@ func TestCustomKeys(t *testing.T) {
 	if h.a.rec != nil || !slices.Equal(h.a.cfg.keysOf("details"), []string{"Right"}) {
 		t.Fatalf("recording %+v, keys %q", h.a.rec, h.a.cfg.keysOf("details"))
 	}
+	// ⌘., which AppKit keeps from the window as Escape's, is recorded,
+	// and does what it's a key of.
+	h.a.startRecording("search", 1, true)
+	h.settle()
+	if !h.a.keyMissed(ui.Cmd, ui.KeyPeriod) || !slices.Equal(h.a.cfg.keysOf("search"), []string{"Cmd+F", "Cmd+."}) {
+		t.Fatalf("keys %q", h.a.cfg.keysOf("search"))
+	}
+	h.settle()
+	h.has("⌘.", "New hotkey is set!")
+	h.a.rec = nil
+	if h.a.keyMissed(ui.Cmd, ui.KeyPeriod) {
+		t.Error("⌘. searched in the settings")
+	}
+	h.a.startRecording("settings", 1, true)
+	if !h.a.keyMissed(ui.Cmd|ui.Shift, ui.KeyPeriod) || !slices.Equal(h.a.cfg.keysOf("settings"), []string{"Cmd+,", "Shift+Cmd+."}) {
+		t.Fatalf("keys %q", h.a.cfg.keysOf("settings"))
+	}
+	h.a.rec = nil
+	h.settle()
 	// The arrows need none.
 	h.a.startRecording("previous", 0, false)
 	h.settle()
@@ -993,6 +1012,10 @@ func TestCustomKeys(t *testing.T) {
 	if h.sys.last() != "gh-s3cret!" {
 		t.Errorf("⌘B copied %q", h.sys.last())
 	}
+	if !h.a.keyMissed(ui.Cmd|ui.Shift, ui.KeyPeriod) || h.a.page != pageSettings {
+		t.Errorf("⇧⌘. didn't open the settings: page %v", h.a.page)
+	}
+	h.key(0, ui.KeyEscape)
 	h.a.resetKeys()
 	if h.a.cfg.Keys != nil {
 		t.Errorf("keys %v", h.a.cfg.Keys)

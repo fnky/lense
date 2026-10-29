@@ -150,6 +150,27 @@ func (s *shell) ready() {
 		a.keyErr, a.keyErrID = fmt.Sprintf("%s is taken by another app. Choose another shortcut.", keySymbols(cfg.Shortcut)), "show"
 	}
 
+	// ⌘., which AppKit keeps from the window, as Escape's.
+	macos.CatchCommandPeriod(func(nsWindow uintptr, shift, ctrl, alt bool) bool {
+		if s.win == nil || nsWindow != s.win.NativeHandle() {
+			return false
+		}
+		mods := ui.Super
+		for _, m := range []struct {
+			held bool
+			mod  ui.Modifiers
+		}{{shift, ui.Shift}, {ctrl, ui.Ctrl}, {alt, ui.Alt}} {
+			if m.held {
+				mods |= m.mod
+			}
+		}
+		if !a.keyMissed(mods, ui.KeyPeriod) {
+			return false
+		}
+		s.redraw()
+		return true
+	})
+
 	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) { s.quitting = true })
 	mygo.App.OnWillQuit(func(*mygo.QuitEvent) {
 		a.lock(true)
