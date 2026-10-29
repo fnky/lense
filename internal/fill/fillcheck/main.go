@@ -97,7 +97,7 @@ document.querySelector('[data-user]').addEventListener('input', () => setTimeout
 	{name: "card", card: true, body: `<form>
 <label for=n>Name on card</label><input id=n data-k=name>
 <label for=c>Card number</label><input id=c data-k=number>
-<select id=exp-month aria-label="Expiration month" data-k=month><option value="">MM</option><option value="01">01</option><option value="02">02</option><option value="07">07</option><option value="08">08</option><option value="09">09</option><option value="12">12</option></select>
+<select id=exp-month aria-label="Expiration month" data-k=month><option value="">MM</option><option>01</option><option>02</option><option>03</option><option>04</option><option>05</option><option>06</option><option>07</option><option>08</option><option>09</option><option>10</option><option>11</option><option>12</option></select>
 <select id=exp-year aria-label="Expiration year" data-k=year><option value="">YYYY</option><option>2026</option><option>2028</option><option>2029</option><option>2030</option></select>
 <input id=cvc placeholder=CVC data-k=code>
 </form>`, want: map[string]string{"name": "Ada Lovelace", "number": "4111111111111111", "month": "08", "year": "2029", "code": "123"}},
@@ -108,7 +108,7 @@ document.querySelector('[data-user]').addEventListener('input', () => setTimeout
 <input id=address-line-1 data-k=address1><input id=city data-k=city>
 <select id=state data-k=state><option value="">State</option><option value=ME>Maine</option><option value=MD>Maryland</option><option value=MA>Massachusetts</option></select>
 <input id=postal-code data-k=postal>
-<select id=country data-k=country><option value="">Country</option><option value=DE>Germany</option><option value=GB>United Kingdom</option><option value=US>United States</option></select>
+<select id=country data-k=country><option value="">Country</option><optgroup label=Europe><option value=DE>Germany</option><option value=GB>United Kingdom</option></optgroup><optgroup label=Americas><option value=CA>Canada</option><option value=US>United States</option></optgroup></select>
 <input type=tel id=phone data-k=phone>
 </form>`, want: map[string]string{"first": "Ada", "last": "Lovelace", "email": "ada@example.com", "address1": "12 Analytical Row",
 		"city": "Cambridge", "state": "MA", "postal": "02139", "country": "US", "phone": "+1 617 555 0100"}},
@@ -120,11 +120,12 @@ document.querySelector('[data-user]').addEventListener('input', () => setTimeout
 	{name: "iframe", body: `<p>Sign in below.</p><iframe src="/frame/iframe" style="width: 480px; height: 160px"></iframe>`, refused: "frame"},
 }
 
-// selectsForm has the menus of a card's expiration, for -probe -page
-// selects to see how they take a value.
+// selectsForm has the menus of a card's expiration, and of countries in
+// groups, for -probe -page selects to see what their menus tell.
 const selectsForm = `<form>
 <select id=month aria-label="Expiration month"><option value="">MM</option><option value="01">01 - January</option><option value="02">02 - February</option><option value="03">03 - March</option><option value="12">12 - December</option></select>
 <select id=year aria-label="Expiration year"><option value="">YYYY</option><option value="2026">2026</option><option value="2027">2027</option><option value="2028">2028</option></select>
+<select id=country aria-label="Country"><option value="">Country</option><optgroup label=Europe><option value=DE>Germany</option><option value=GB>United Kingdom</option></optgroup><optgroup label=Americas><option value=CA>Canada</option><option value=US>United States</option></optgroup></select>
 </form>
 <script>
 for (const s of document.querySelectorAll('select'))
@@ -311,13 +312,14 @@ func main() {
 		// React-like one's, and see what the page made of it.
 		for i, c := range controls {
 			if in := c.Info(); in.Type == "select" {
-				// Typed into, as the user would, it chooses what starts so.
+				// Space opens its menu, AppKit's, which tells its items.
 				c.Focus()
 				time.Sleep(200 * time.Millisecond)
-				typed := map[string]string{"month": "03", "year": "2027"}[in.ID]
-				macos.TypeText(pid, typed, 4*time.Millisecond)
-				time.Sleep(600 * time.Millisecond)
-				fmt.Fprintf(w, "typed %q into %q: holds %q\n", typed, in.ID, c.Value())
+				macos.PressKey(pid, macos.KeySpace)
+				time.Sleep(300 * time.Millisecond)
+				m := macos.OpenMenu(pid, c)
+				fmt.Fprintf(w, "menu of %q: %q, closed %v\n", in.ID, m.Items(), m.Close())
+				time.Sleep(300 * time.Millisecond)
 				continue
 			}
 			if id := c.Info().ID; id == "u1" || id == "react-user" || *probePage != "probe" {
