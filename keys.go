@@ -8,13 +8,15 @@ import (
 )
 
 // mode is where the keys of Quick Access act: on the items found, on the
-// fields of the item chosen, or on the vaults to choose from.
+// fields of the item chosen, on the vaults to choose from, or on the ways
+// to fill the item chosen.
 type mode int
 
 const (
 	modeResults mode = iota
 	modeDetails
 	modeVaults
+	modeFillMenu
 )
 
 // scope is the modes an action works in.
@@ -27,6 +29,7 @@ const (
 	inResults
 	inDetails
 	inVaults
+	inFillMenu
 )
 
 func (s scope) covers(m mode) bool {
@@ -41,6 +44,8 @@ func (s scope) covers(m mode) bool {
 		return m == modeDetails
 	case inVaults:
 		return m == modeVaults
+	case inFillMenu:
+		return m == modeFillMenu
 	}
 	return false
 }
@@ -51,7 +56,7 @@ func (s scope) overlaps(o scope) bool {
 	if s == inGlobal || o == inGlobal {
 		return s == o
 	}
-	for _, m := range []mode{modeResults, modeDetails, modeVaults} {
+	for _, m := range []mode{modeResults, modeDetails, modeVaults, modeFillMenu} {
 		if s.covers(m) && o.covers(m) {
 			return true
 		}
@@ -75,7 +80,7 @@ var actions = []action{
 	{"previous", "Previous item", "Search results", inResults, []string{"Up"}},
 	{"next", "Next item", "Search results", inResults, []string{"Down"}},
 	{"details", "Go to the item's fields", "Search results", inResults, []string{"Right"}},
-	{"default", "Fill, or copy the password", "Search results", inResults, []string{"Return"}},
+	{"default", "Fill, or open a website and fill it", "Search results", inResults, []string{"Return"}},
 	{"complete", "Finish the filter", "Search results", inResults, []string{"Tab"}},
 
 	{"field-previous", "Previous field", "Item details", inDetails, []string{"Up"}},
@@ -90,10 +95,14 @@ var actions = []action{
 	{"vault-collapse", "Hide them, or go back", "Vault selector", inVaults, []string{"Left"}},
 	{"vault-choose", "Search the vault", "Vault selector", inVaults, []string{"Return"}},
 
+	{"menu-previous", "Previous choice", "Open and Fill menu", inFillMenu, []string{"Up"}},
+	{"menu-next", "Next choice", "Open and Fill menu", inFillMenu, []string{"Down"}},
+	{"menu-choose", "Open it and fill, or fill", "Open and Fill menu", inFillMenu, []string{"Return"}},
+
 	{"copy-username", "Copy the username", "Items", inItems, []string{"Cmd+C", "Cmd+B"}},
 	{"copy-password", "Copy the password", "Items", inItems, []string{"Shift+Cmd+C"}},
 	{"copy-code", "Copy the one-time password", "Items", inItems, []string{"Option+Cmd+C"}},
-	{"open-fill", "Open the website, and fill it", "Items", inItems, []string{"Shift+Return"}},
+	{"open-fill", "Open a website, and fill it", "Items", inItems, []string{"Shift+Return"}},
 	{"open-window", "Open the item in a window", "Items", inItems, []string{"Cmd+O"}},
 	{"open-bitwarden", "Open Bitwarden", "Items", inItems, []string{"Shift+Cmd+O"}},
 	{"choose-vault", "Choose the vault", "Items", inItems, []string{"Cmd+K"}},

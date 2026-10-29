@@ -631,6 +631,8 @@ func (m *macSystem) fieldFocused(app macos.App) bool {
 	return macos.Trusted(false) && macos.FocusedFieldOf(app.PID) != macos.FieldNone
 }
 
+func (m *macSystem) defaultBrowser() string { return macos.DefaultBrowser() }
+
 func (m *macSystem) pageURL(ctx context.Context, browser macos.App) string {
 	u, _ := macos.BrowserURL(ctx, browser.BundleID)
 	return u

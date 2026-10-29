@@ -17,6 +17,7 @@ func Activate(pid int) bool                          { return false }
 func IsRunning(bundleID string) bool                 { return false }
 func IsInstalled(bundleID string) bool               { return false }
 func OpenApp(bundleID string, urls ...string) error  { return errors.ErrUnsupported }
+func DefaultBrowser() string                         { return "" }
 func LaunchHidden(bundleID string) error             { return errors.ErrUnsupported }
 func IsBrowser(bundleID string) bool                 { return false }
 func Trusted(prompt bool) bool                       { return false }

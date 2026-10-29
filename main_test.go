@@ -116,7 +116,8 @@ type fakeSystem struct {
 	sealedKeys []*fakeSealed
 	auths      int
 	trust      bool
-	field      bool // a text field has the focus in the app the user was in
+	field      bool   // a text field has the focus in the app the user was in
+	browser    string // the browser that websites open in
 	drags      []dragPhase
 	pageURLs   map[string]string
 	// phase and momentum are those of the scrolling, none by default.
@@ -184,6 +185,7 @@ func (s *fakeSystem) fill(_ context.Context, _ macos.App, req fillRequest) error
 }
 func (s *fakeSystem) pageURL(_ context.Context, b macos.App) string { return s.pageURLs[b.BundleID] }
 func (s *fakeSystem) fieldFocused(macos.App) bool                   { return s.field }
+func (s *fakeSystem) defaultBrowser() string                        { return s.browser }
 func (s *fakeSystem) secureInput(on bool)                           { s.secure = append(s.secure, on) }
 func (s *fakeSystem) drag(p dragPhase)                              { s.drags = append(s.drags, p) }
 func (s *fakeSystem) scrollPhase() (macos.Phase, macos.Phase)       { return s.phase, s.momentum }
@@ -593,14 +595,16 @@ func TestSearchAndKeys(t *testing.T) {
 		t.Errorf("recent %v", h.a.cfg.Recent)
 	}
 
-	// Return fills the app the user was in.
-	h.a.front = front{app: macos.App{PID: 42, Name: "Safari", BundleID: "com.apple.Safari"}}
+	// Return fills the page the user was on, of the login's website.
+	h.a.front = front{app: macos.App{PID: 42, Name: "Safari", BundleID: "com.apple.Safari"}, url: "https://github.com/login"}
+	h.a.noteSuggestions()
 	h.key(0, ui.KeyEnter)
 	if len(h.sys.filled) != 1 || h.sys.filled[0].username != "ada" || h.sys.filled[0].password != "gh-s3cret!" || h.sys.filled[0].page != "" {
 		t.Fatalf("filled %+v", h.sys.filled)
 	}
-	// Shift-Return opens its website, and fills it.
+	// Shift-Return offers its websites to open, and fills the one chosen.
 	h.key(ui.Shift, ui.KeyEnter)
+	h.key(0, ui.KeyEnter)
 	if len(h.sys.filled) != 2 || h.sys.filled[1].page != "https://github.com/login" {
 		t.Fatalf("filled %+v", h.sys.filled)
 	}
@@ -754,6 +758,9 @@ func TestFillNeedsAccessibility(t *testing.T) {
 	h.a.front = front{app: macos.App{PID: 42, Name: "Slack"}}
 	h.tt.Type("git")
 	h.settle()
+	// Not where GitHub is for, Return offers its website, then Slack.
+	h.key(0, ui.KeyEnter)
+	h.key(0, ui.KeyDown)
 	h.key(0, ui.KeyEnter)
 	if len(h.sys.filled) != 0 {
 		t.Fatal("filled without access")
@@ -769,6 +776,8 @@ func TestFillFails(t *testing.T) {
 	h.a.front = front{app: macos.App{PID: 42, Name: "Slack"}}
 	h.tt.Type("git")
 	h.settle()
+	h.key(0, ui.KeyEnter)
+	h.key(0, ui.KeyDown)
 	h.key(0, ui.KeyEnter)
 	if h.sys.shown != 1 || h.sys.last() != "gh-s3cret!" {
 		t.Fatalf("shown %d, copied %q", h.sys.shown, h.sys.copied)
@@ -985,14 +994,17 @@ func TestPlacement(t *testing.T) {
 }
 
 func TestReturnWithoutAFieldCopies(t *testing.T) {
-	h := newHarness(t, nil, true)
+	// A login without a website to open.
+	f := bwtest.Sample()
+	f.Add(bwtest.Item{Type: bw.TypeLogin, Name: "Mainframe", Login: &bwtest.Login{Username: "ada", Password: "m41nfr4me"}}, false)
+	h := newHarness(t, f, true)
 	h.unlock()
 	h.a.front = front{app: macos.App{PID: 42, Name: "Notes", BundleID: "com.apple.Notes"}}
-	h.tt.Type("git")
+	h.tt.Type("mainframe")
 	h.settle()
 	h.has("Copy password")
 	h.key(0, ui.KeyEnter)
-	if len(h.sys.filled) != 0 || h.sys.last() != "gh-s3cret!" {
+	if len(h.sys.filled) != 0 || h.sys.last() != "m41nfr4me" {
 		t.Fatalf("filled %v, copied %q", h.sys.filled, h.sys.copied)
 	}
 	// With a field to fill, Return fills it.
@@ -1002,6 +1014,71 @@ func TestReturnWithoutAFieldCopies(t *testing.T) {
 	h.key(0, ui.KeyEnter)
 	if len(h.sys.filled) != 1 {
 		t.Fatalf("filled %v", h.sys.filled)
+	}
+}
+
+func TestOpenAndFillMenu(t *testing.T) {
+	f := bwtest.Sample()
+	f.Add(bwtest.Item{Type: bw.TypeLogin, Name: "Tracker", Login: &bwtest.Login{Username: "ada", Password: "tr4ck",
+		URIs: []bw.URI{{URI: "https://tracker.example.com/login"}, {URI: "status.example.com"}}}}, false)
+	h := newHarness(t, f, true)
+	h.unlock()
+	h.sys.browser, h.sys.trust = "Safari", true
+	h.a.setFront(macos.App{PID: 42, Name: "Notes", BundleID: "com.apple.Notes"})
+	h.tt.Type("tracker")
+	h.settle()
+	// Away from its websites, Return offers them to open, and fill.
+	h.has("Open and Fill in Safari")
+	h.key(0, ui.KeyEnter)
+	if h.a.mode != modeFillMenu || len(h.sys.filled) != 0 {
+		t.Fatalf("mode %v, filled %+v", h.a.mode, h.sys.filled)
+	}
+	h.has("tracker.example.com/login", "status.example.com")
+	snapshot(t, h.tt, "fill-menu")
+	// Escape puts the menu away, and leaves the window.
+	h.key(0, ui.KeyEscape)
+	if h.a.mode != modeResults || h.sys.hidden != 0 || h.a.query != "tracker" {
+		t.Fatalf("mode %v, hidden %d, query %q", h.a.mode, h.sys.hidden, h.a.query)
+	}
+	// The arrows choose a website, which Return opens and fills.
+	h.key(0, ui.KeyEnter)
+	h.key(0, ui.KeyDown)
+	h.key(0, ui.KeyEnter)
+	if len(h.sys.filled) != 1 || h.sys.filled[0].page != "https://status.example.com" {
+		t.Fatalf("filled %+v", h.sys.filled)
+	}
+	// Typing puts it away, into the search.
+	h.key(0, ui.KeyEnter)
+	h.tt.Type("x")
+	h.settle()
+	if h.a.mode != modeResults || h.a.query != "trackerx" {
+		t.Fatalf("mode %v, query %q", h.a.mode, h.a.query)
+	}
+	h.key(0, ui.KeyBackspace)
+
+	// On one of its websites, Return fills the page.
+	h.sys.pageURLs = map[string]string{"com.apple.Safari": "https://tracker.example.com/board"}
+	h.a.setFront(macos.App{PID: 7, Name: "Safari", BundleID: "com.apple.Safari"})
+	h.settle()
+	h.has("Fill in Safari")
+	h.key(0, ui.KeyEnter)
+	if len(h.sys.filled) != 2 || h.sys.filled[1].page != "" {
+		t.Fatalf("filled %+v", h.sys.filled)
+	}
+	// Held, Shift shows what Shift-Return does: the menu, there too.
+	h.tt.HoldModifiers(ui.Shift)
+	h.settle()
+	h.has("⇧↩", "Open and Fill in Safari")
+	h.tt.HoldModifiers(0)
+	h.settle()
+	h.has("Fill in Safari")
+	h.key(ui.Shift, ui.KeyEnter)
+	if cs := h.a.menuChoices(h.a.selected()); h.a.mode != modeFillMenu || len(cs) != 2 {
+		t.Fatalf("mode %v, choices %+v", h.a.mode, cs)
+	}
+	h.click("tracker.example.com/login")
+	if len(h.sys.filled) != 3 || h.sys.filled[2].page != "https://tracker.example.com/login" {
+		t.Fatalf("filled %+v", h.sys.filled)
 	}
 }
 
@@ -1402,7 +1479,7 @@ func TestFooterOverAppKitsMaterial(t *testing.T) {
 	if _, ok := ft.Find("Open in Bitwarden"); !ok {
 		t.Fatal("the footer's window shows no footer")
 	}
-	if _, ok := ft.Find("Fields"); !ok {
+	if _, ok := ft.Find("Copy username"); !ok {
 		t.Fatal("the footer's window shows no keys")
 	}
 	h.a.page = pageSettings
@@ -1543,6 +1620,7 @@ func TestHidingForgetsWhatShowed(t *testing.T) {
 	// Filling hides the window, as going elsewhere does: what it revealed
 	// goes with it, what it showed stays for the next time.
 	h.key(ui.Shift, ui.KeyEnter)
+	h.key(0, ui.KeyEnter)
 	if h.sys.hidden != 1 || len(h.a.reveal) != 0 || len(h.a.reprompted) != 0 {
 		t.Fatalf("hidden %d, revealed %v, reprompted %v", h.sys.hidden, h.a.reveal, h.a.reprompted)
 	}

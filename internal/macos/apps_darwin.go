@@ -78,6 +78,28 @@ func IsInstalled(bundleID string) bool {
 	return found
 }
 
+// DefaultBrowser names the browser that websites open in, as "Safari",
+// or "".
+func DefaultBrowser() string {
+	if load() != nil {
+		return ""
+	}
+	name := ""
+	withPool(func() {
+		u := class("NSURL").Send(sel("URLWithString:"), nsString("https://example.com"))
+		if u == 0 {
+			return
+		}
+		ws := class("NSWorkspace").Send(sel("sharedWorkspace"))
+		app := ws.Send(sel("URLForApplicationToOpenURL:"), u)
+		if app == 0 {
+			return
+		}
+		name = goString(app.Send(sel("URLByDeletingPathExtension")).Send(sel("lastPathComponent")))
+	})
+	return name
+}
+
 // OpenApp opens the app with the bundle identifier, and the URLs given,
 // with it.
 func OpenApp(bundleID string, urls ...string) error {

@@ -49,6 +49,9 @@ func (a *app) itemsView(c *ui.Context, k ink) {
 	if a.mode == modeVaults {
 		a.vaultMenu(c, k)
 	}
+	if a.mode == modeFillMenu {
+		a.fillMenu(c, k)
+	}
 	if a.large != nil {
 		a.largeTypeView(c, k)
 	}
@@ -133,6 +136,59 @@ func (a *app) vaultMenu(c *ui.Context, k ink) {
 				}
 			})
 		})
+	})
+}
+
+// fillMenu is the Open and Fill menu, over the footer's first key: the
+// websites of the item chosen to open and fill, and the app the user was
+// in to fill, which the arrows go through and Return chooses.
+func (a *app) fillMenu(c *ui.Context, k ink) {
+	choices := a.menuChoices(a.selected())
+	if len(choices) == 0 {
+		return
+	}
+	// A press beside it puts it away.
+	ui.Box(c.Key("fill-backdrop")).Absolute().Top(0).Left(0).Right(0).Bottom(0).OnClick(a.closeFillMenu)
+	panel := ui.Column(c.Key("fill-menu")).Absolute().Left(8).Bottom(footerHeight+4).Width(280).MaxHeight(windowHeight-120).
+		Padding(6).Radius(12).Background(k.raised).Border(1, k.line).Shadow(0, 10, 30, 0, ui.RGBA(0, 0, 0, 0.25)).
+		Label(a.openFillLabel())
+	panel.Children(func() {
+		ui.Text(c, a.openFillLabel()).FontSize(11).FontWeight(600).TextColor(k.faint).Padding(4, 8, 6, 8)
+		ui.Scroll(c.Key("fill-scroll")).Shrink(1).Children(func() {
+			ui.Column(c).Gap(1).Children(func() {
+				for i, ch := range choices {
+					if ch.page == "" {
+						ui.Box(c.Key("rule")).Height(1).Margin(4, 8).Background(k.line)
+					}
+					a.fillMenuRow(c.Key(i), k, i, ch)
+				}
+			})
+		})
+	})
+}
+
+func (a *app) fillMenuRow(c *ui.Context, k ink, i int, ch menuChoice) {
+	chosen := i == a.menuSel
+	row := ui.Row(c).Padding(6, 8).Gap(8).Radius(7).AlignItems(ui.Center).Label(ch.label)
+	switch {
+	case chosen:
+		row.Background(k.selected).ScrollIntoView()
+	case row.Hovered():
+		row.Background(k.hover)
+	}
+	row.OnClick(func() { a.chooseMenu(i) })
+	row.Children(func() {
+		icon := iconGlobe
+		if ch.page == "" {
+			icon = iconLogin
+		}
+		ui.Icon(c, icon).FontSize(14).TextColor(k.muted)
+		ui.Text(c, ch.label).SingleLine().Grow(1).Shrink(1)
+		if chosen {
+			if h := a.cfg.keyHint("menu-choose"); h != "" {
+				ui.Text(c, h).FontSize(11).FontWeight(600).TextColor(k.muted)
+			}
+		}
 	})
 }
 
@@ -453,10 +509,12 @@ func (a *app) footerBar(c *ui.Context, k ink, bar ui.Element) {
 		case it == nil:
 			hint("close", "Close")
 		default:
-			if name := a.fillTarget(it); name != "" {
-				hint("default", "Fill in "+name)
-			} else if it.Login != nil && !it.Login.Password.Empty() {
-				hint("default", "Copy password")
+			// Shift-Return's shows while Shift is held, in Return's place,
+			// where the Open and Fill menu opens.
+			if a.shift && launchURL(it) != "" {
+				hint("open-fill", a.openFillLabel())
+			} else if label := a.returnLabel(it); label != "" {
+				hint("default", label)
 			}
 			if f, ok := primary(it); ok {
 				hint("copy-username", "Copy "+f.label)

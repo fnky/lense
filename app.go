@@ -60,6 +60,9 @@ type system interface {
 	// fieldFocused reports whether a text field has the keyboard focus in
 	// an app, which Return fills then.
 	fieldFocused(app macos.App) bool
+	// defaultBrowser names the browser that websites open in, as
+	// "Safari", or "".
+	defaultBrowser() string
 	show()
 	hide()
 	openDetail(id string)
@@ -209,14 +212,27 @@ type app struct {
 	searchCaret int  // where the search's caret is, in runes
 	caretEnd    bool // puts the caret after the search, which changed
 	front       front
+	// suggested are the suggestions for where the user was, by ID, which
+	// Return fills there.
+	suggested map[string]bool
+	// browser names the browser that websites open in.
+	browser string
+	// shift is whether Shift is held, as the footer shows what
+	// Shift-Return does then.
+	shift bool
 	// mode is where the keys act: on the results, on the fields of the
-	// item chosen (fieldSel the one they are on), or on the vaults
+	// item chosen (fieldSel the one they are on), on the vaults
 	// (vaultCursor the one they are on, vaultOpen those showing what they
-	// hold).
+	// hold), or on the Open and Fill menu (menuSel the choice they are on,
+	// menuHere whether it offers the app the user was in, menuBack the
+	// mode it goes back to).
 	mode        mode
 	fieldSel    int
 	vaultCursor string
 	vaultOpen   map[string]bool
+	menuSel     int
+	menuHere    bool
+	menuBack    mode
 	large       *largeType
 	// reveal shows secret fields, by fieldKey; reprompted is the items
 	// whose master password was asked for, as their owners asked.
@@ -971,6 +987,17 @@ func (a *app) chooseVault(id string) {
 	a.rebuild(false)
 }
 
+// noteSuggestions notes the suggestions for where the user was, which
+// Return fills there, and returns them.
+func (a *app) noteSuggestions() []*bw.Item {
+	items := a.suggestions()
+	a.suggested = make(map[string]bool, len(items))
+	for _, it := range items {
+		a.suggested[it.ID] = true
+	}
+	return items
+}
+
 // suggestions are the items for the app the user was in, or its page.
 func (a *app) suggestions() []*bw.Item {
 	switch {
@@ -998,6 +1025,7 @@ func (a *app) rebuild(keep bool) {
 		a.sel = -1
 		return
 	}
+	suggestions := a.noteSuggestions()
 	if comps := a.index.Complete(a.query); len(comps) > 0 {
 		a.rows = append(a.rows, row{header: "Filters"})
 		for i := range comps {
@@ -1023,7 +1051,7 @@ func (a *app) rebuild(keep bool) {
 		}
 	}
 	if q.Empty() {
-		section("Suggestions", a.suggestions(), 6)
+		section("Suggestions", suggestions, 6)
 		var favs, recent []*bw.Item
 		for _, it := range a.vault.Items {
 			if it.Favorite {
@@ -1039,17 +1067,13 @@ func (a *app) rebuild(keep bool) {
 		section("Recently Used", recent, 6)
 		section("All Items", a.vault.Items, 0)
 	} else {
-		suggested := map[string]bool{}
-		for _, it := range a.suggestions() {
-			suggested[it.ID] = true
-		}
 		title := ""
 		if len(a.rows) > 0 {
 			title = "Items"
 		}
 		section(title, a.index.Run(q, func(it *bw.Item) int {
 			b := 0
-			if suggested[it.ID] {
+			if a.suggested[it.ID] {
 				b += 20
 			}
 			if i := slices.Index(a.cfg.Recent, it.ID); i >= 0 {
@@ -1135,6 +1159,8 @@ func (a *app) escape() {
 		a.prob = nil
 	case a.mode == modeVaults:
 		a.setMode(modeResults)
+	case a.mode == modeFillMenu:
+		a.closeFillMenu()
 	case a.page == pageAcknowledgements:
 		a.page = pageSettings
 	case a.page == pageSettings && a.recordID != "":
@@ -1401,38 +1427,95 @@ func (a *app) copyCodeOf(it *bw.Item) {
 	a.copyField(it, field{label: "one-time password", value: code, secret: true})
 }
 
-// launchURL is the first website of a login, as a URL to open.
-func launchURL(it *bw.Item) string {
+// launchURLs are the websites of a login, as URLs to open.
+func launchURLs(it *bw.Item) []string {
 	if it == nil || it.Login == nil {
-		return ""
+		return nil
 	}
+	var out []string
 	for _, u := range it.Login.URIs {
 		s := strings.TrimSpace(u.URI)
 		switch {
-		case s == "":
 		case strings.HasPrefix(s, "http://"), strings.HasPrefix(s, "https://"):
-			return s
-		case !strings.Contains(s, "://") && strings.Contains(s, "."):
-			return "https://" + s
+		case s != "" && !strings.Contains(s, "://") && strings.Contains(s, "."):
+			s = "https://" + s
+		default:
+			continue
 		}
+		if !slices.Contains(out, s) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// launchURL is the first website of a login, as a URL to open.
+func launchURL(it *bw.Item) string {
+	if us := launchURLs(it); len(us) > 0 {
+		return us[0]
 	}
 	return ""
 }
 
-// fill types the login into the app the user was in, or, with open, into
-// its website, which it opens first.
-func (a *app) fill(it *bw.Item, open bool) {
+// --- The Open and Fill menu ---
+
+// menuChoice is a choice of the Open and Fill menu: a website to open and
+// fill, or, without one, the app the user was in to fill.
+type menuChoice struct {
+	label string
+	page  string
+}
+
+// menuChoices are the choices of the Open and Fill menu for it: its
+// websites, then, where Return opened it, the app the user was in.
+func (a *app) menuChoices(it *bw.Item) []menuChoice {
+	var out []menuChoice
+	for _, u := range launchURLs(it) {
+		label := strings.TrimPrefix(strings.TrimPrefix(u, "https://"), "http://")
+		out = append(out, menuChoice{label: strings.TrimSuffix(label, "/"), page: u})
+	}
+	if name := a.fillTarget(it); a.menuHere && name != "" {
+		out = append(out, menuChoice{label: "Fill in " + name})
+	}
+	return out
+}
+
+// openFillMenu offers the websites of it to open and fill, the first
+// chosen, and with here, the app the user was in to fill too.
+func (a *app) openFillMenu(it *bw.Item, here bool) {
 	if it == nil || it.Login == nil {
 		return
 	}
-	var page string
-	if open {
-		if page = launchURL(it); page == "" {
-			a.say("%s has no website to open", it.Name)
-			return
-		}
+	if launchURL(it) == "" {
+		a.say("%s has no website to open", it.Name)
+		return
 	}
-	a.fillInto(it, page)
+	if a.mode != modeFillMenu {
+		a.menuBack = a.mode
+	}
+	a.menuSel, a.menuHere = 0, here
+	a.setMode(modeFillMenu)
+}
+
+func (a *app) closeFillMenu() {
+	a.setMode(a.menuBack)
+}
+
+func (a *app) moveMenu(n int) {
+	cs := a.menuChoices(a.selected())
+	a.menuSel = min(max(a.menuSel+n, 0), len(cs)-1)
+}
+
+// chooseMenu opens the website of choice i and fills it, or fills the app
+// the user was in.
+func (a *app) chooseMenu(i int) {
+	it := a.selected()
+	cs := a.menuChoices(it)
+	a.closeFillMenu()
+	if i < 0 || i >= len(cs) {
+		return
+	}
+	a.fillInto(it, cs[i].page)
 }
 
 // fillInto types the login into page, which it opens first, or into the
@@ -1513,8 +1596,11 @@ func (a *app) openInBitwarden() {
 // page.
 func (a *app) setFront(app macos.App) {
 	a.front = front{app: app}
+	a.browser = a.sys.defaultBrowser()
 	if a.unlocked() && a.query == "" {
 		a.rebuild(true)
+	} else {
+		a.noteSuggestions()
 	}
 	if !macos.IsBrowser(app.BundleID) {
 		return
@@ -1530,6 +1616,8 @@ func (a *app) setFront(app macos.App) {
 			a.front.url = u
 			if a.unlocked() && a.query == "" {
 				a.rebuild(false)
+			} else {
+				a.noteSuggestions()
 			}
 		})
 	})

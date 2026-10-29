@@ -95,6 +95,12 @@ func (a *app) run(id string) bool {
 	case "vault-choose":
 		a.chooseVault(a.vaultCursor)
 		a.setMode(modeResults)
+	case "menu-previous":
+		a.moveMenu(-1)
+	case "menu-next":
+		a.moveMenu(1)
+	case "menu-choose":
+		a.chooseMenu(a.menuSel)
 	case "copy-username":
 		a.copyPrimary()
 	case "copy-password":
@@ -102,7 +108,7 @@ func (a *app) run(id string) bool {
 	case "copy-code":
 		a.copyCode()
 	case "open-fill":
-		a.fill(a.selected(), true)
+		a.openFillMenu(a.selected(), false)
 	case "open-window":
 		a.openDetail()
 	case "open-bitwarden":
@@ -153,6 +159,9 @@ func (a *app) hidden() {
 	a.reveal, a.reprompted = map[string]bool{}, map[string]bool{}
 	a.large = nil
 	a.codes, a.shownValues = nil, nil
+	if a.mode == modeFillMenu {
+		a.closeFillMenu()
+	}
 }
 
 // --- The fields of the item chosen ---
@@ -367,16 +376,24 @@ func (a *app) jumpVault(n int) {
 
 // --- Return ---
 
-// defaultAction is Return's: it fills a login into the app the user was
-// in when that app has a field to fill, as a browser's page, and copies
-// its password otherwise; for the other items, what they hold first.
+// defaultAction is Return's: it fills a login where the user was when
+// that is where the login is for, a page of one of its websites or its
+// app, and else offers its websites to open and fill, in the Open and
+// Fill menu. A login without a website fills the app the user was in when
+// that app has a field to fill, as a browser's page, and copies its
+// password otherwise; the other items copy what they hold first.
 func (a *app) defaultAction(it *bw.Item) {
 	if l := it.Login; l != nil && !l.Password.Empty() {
-		if t := a.front.app; t.PID != 0 && (macos.IsBrowser(t.BundleID) || a.sys.fieldFocused(t)) {
-			a.fill(it, false)
-			return
+		switch {
+		case a.onSite(it):
+			a.fillInto(it, "")
+		case launchURL(it) != "":
+			a.openFillMenu(it, true)
+		case a.fillTarget(it) != "":
+			a.fillInto(it, "")
+		default:
+			a.copyField(it, field{label: "password", sec: l.Password, secret: true})
 		}
-		a.copyField(it, field{label: "password", sec: l.Password, secret: true})
 		return
 	}
 	if f, ok := primary(it); ok {
@@ -386,7 +403,37 @@ func (a *app) defaultAction(it *bw.Item) {
 	a.say("%s has nothing to copy", it.Name)
 }
 
-// fillTarget names where Return fills, or "".
+// returnLabel says what Return does to it, for the footer, or "".
+func (a *app) returnLabel(it *bw.Item) string {
+	if it.Login == nil || it.Login.Password.Empty() {
+		return ""
+	}
+	if name := a.fillTarget(it); name != "" && (a.onSite(it) || launchURL(it) == "") {
+		return "Fill in " + name
+	}
+	if launchURL(it) != "" {
+		return a.openFillLabel()
+	}
+	return "Copy password"
+}
+
+// openFillLabel says what the Open and Fill menu does, in the browser
+// that websites open in.
+func (a *app) openFillLabel() string {
+	if a.browser == "" {
+		return "Open and Fill"
+	}
+	return "Open and Fill in " + a.browser
+}
+
+// onSite reports whether the user was where the login is for, with a
+// field to fill it in: on a page of one of its websites, or in its app,
+// as its suggestions say.
+func (a *app) onSite(it *bw.Item) bool {
+	return a.suggested[it.ID] && a.fillTarget(it) != ""
+}
+
+// fillTarget names where the user was, which Return can fill, or "".
 func (a *app) fillTarget(it *bw.Item) string {
 	t := a.front.app
 	if it == nil || it.Login == nil || it.Login.Password.Empty() || t.PID == 0 {

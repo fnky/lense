@@ -115,6 +115,7 @@ func (a *app) view(c *ui.Context) {
 		k = k.over(t.Dark)
 	}
 	c.Root().Background(ui.Transparent)
+	a.shift = c.Modifiers()&ui.Shift != 0
 
 	a.windowKeys(c)
 

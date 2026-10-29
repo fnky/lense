@@ -84,7 +84,7 @@ shortcut that shows Lense included.
 |---|---|
 | ↑ ↓ | Choose an item |
 | → | Go to the item's fields (at the end of the search) |
-| ↩ | Fill the login into the browser you came from, or the app with a login field focused; else copy the password. On a filter, finish it |
+| ↩ | Fill the login into the page you came from, when it is one of its websites, or the app it is for; else choose one of its websites to open and fill. A login without a website fills the browser you came from, or the app with a login field focused, or else copies the password. On a filter, finish it |
 | ⇥ | Finish the filter chosen |
 
 | Item fields | |
@@ -100,20 +100,26 @@ shortcut that shows Lense included.
 | → ← | Show or hide what a vault holds; ← at the top goes back |
 | ↩ | Search it |
 
+| Open and Fill menu (↩, ⇧↩) | |
+|---|---|
+| ↑ ↓ | Choose a website of the login, or the app you came from |
+| ↩ | Open the website in your default browser and fill it, or fill the app |
+| esc | Close the menu |
+
 | Anywhere | |
 |---|---|
 | ⇧⌘Space | Show Lense from any app, on the display the pointer is on, as you left it |
 | ⌘C, ⌘B | Copy the username (a card's number, an identity's email, a note) |
 | ⇧⌘C | Copy the password (a card's security code, a key's private half) |
 | ⌥⌘C | Copy the one-time password |
-| ⇧↩ | Open the login's website in the browser, and fill it |
+| ⇧↩ | Choose one of the login's websites to open in your default browser, and fill it, even on one of them already; hold ⇧ to see it in the footer |
 | ⌘1 … ⌘9 | Search All Vaults, My Vault, an organization, then folders and collections |
 | ⌘O | Open the item in a window of its own |
 | ⇧⌘O | Open Bitwarden |
 | ⌘F | Back to the search |
 | ⌘L | Lock |
 | ⌘, | Settings |
-| esc | Close the selector or Large Type, clear the search, then close Lense, forgetting the passwords revealed |
+| esc | Close a menu, the selector or Large Type, clear the search, then close Lense, forgetting the passwords revealed |
 | ⌘W | Close Lense |
 
 Quick Access shows one of macOS's materials behind its content: Popover,
