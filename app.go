@@ -1005,7 +1005,7 @@ func (a *app) suggestions() []*bw.Item {
 	case a.index == nil:
 		return nil
 	case a.front.url != "":
-		return a.index.ForPage(a.front.url)
+		return a.index.ForPage(a.front.url, a.cfg.URIMatch)
 	case a.front.app.BundleID != "" && !macos.IsBrowser(a.front.app.BundleID):
 		return a.index.ForApp(a.front.app.BundleID, a.front.app.Name)
 	}
@@ -1555,9 +1555,10 @@ func (a *app) fillInto(it *bw.Item, page string) {
 		a.changed()
 		a.sys.hide()
 		code, _, hasCode := a.code(it)
+		def := a.cfg.URIMatch // as the fill runs elsewhere
 		matches := func(url string) bool {
 			for _, u := range l.URIs {
-				if search.MatchesPage(u, url) {
+				if search.MatchesPage(u, url, def) {
 					return true
 				}
 			}

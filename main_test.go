@@ -20,6 +20,7 @@ import (
 	"lense/internal/fill"
 	"lense/internal/ipc"
 	"lense/internal/macos"
+	"lense/internal/search"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -1149,6 +1150,56 @@ func TestFillsOnlyTheLoginsPages(t *testing.T) {
 		if len(h.sys.copied) != copied {
 			t.Errorf("%v: copied %q", err, h.sys.copied[copied:])
 		}
+	}
+}
+
+func TestFillingSettings(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.unlock()
+	if h.a.cfg.URIMatch != search.MatchDomain {
+		t.Fatalf("default match %d", h.a.cfg.URIMatch)
+	}
+	// Safari shows a page of GitHub's, on another host than its login's.
+	h.sys.pageURLs = map[string]string{"com.apple.Safari": "https://gist.github.com/ada"}
+	h.a.setFront(macos.App{PID: 7, Name: "Safari", BundleID: "com.apple.Safari"})
+	h.settle()
+	var github string
+	for _, it := range h.a.vault.Items {
+		if it.Name == "GitHub" {
+			github = it.ID
+		}
+	}
+	if !h.a.suggested[github] {
+		t.Fatal("GitHub isn't suggested on its base domain")
+	}
+
+	h.tt.SetSize(windowWidth, 2400) // all of the settings, unscrolled
+	h.key(ui.Cmd, ui.KeyComma)
+	h.has("Default URI match detection")
+	h.click("Base domain")
+	h.click("Host")
+	if h.a.cfg.URIMatch != search.MatchHost || h.a.suggested[github] {
+		t.Fatalf("match %d, suggested %v", h.a.cfg.URIMatch, h.a.suggested)
+	}
+	if h.tt.HasText("'Starts with' is an advanced option with increased risk of exposing credentials.") {
+		t.Error("warned of Host")
+	}
+	h.click("Host")
+	h.click("Starts with")
+	h.has("'Starts with' is an advanced option with increased risk of exposing credentials.")
+	h.click("Starts with")
+	h.click("Host")
+
+	// The fill matches the pages it types into as the settings say.
+	h.key(0, ui.KeyEscape)
+	h.tt.Type("git")
+	h.settle()
+	h.key(ui.Shift, ui.KeyEnter)
+	if len(h.sys.filled) != 1 {
+		t.Fatalf("filled %v", h.sys.filled)
+	}
+	if m := h.sys.filled[0].matches; m("https://gist.github.com/") || !m("https://github.com/settings") {
+		t.Error("the fill doesn't match by host")
 	}
 }
 

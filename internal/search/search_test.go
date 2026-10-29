@@ -147,9 +147,36 @@ func TestMatchesPage(t *testing.T) {
 		{bw.URI{URI: "https://a.com", Match: m(search.MatchNever)}, "https://a.com", false},
 		{bw.URI{URI: "192.168.1.1"}, "http://192.168.1.1/admin", true},
 	} {
-		if got := search.MatchesPage(tc.uri, tc.page); got != tc.want {
+		if got := search.MatchesPage(tc.uri, tc.page, search.MatchDomain); got != tc.want {
 			t.Errorf("%v on %s: %v", tc.uri.URI, tc.page, got)
 		}
+	}
+}
+
+func TestDefaultMatch(t *testing.T) {
+	m := func(n int) *int { return &n }
+	login := bw.URI{URI: "https://github.com/login"}
+	for _, tc := range []struct {
+		def  int
+		page string
+		want bool
+	}{
+		{search.MatchDomain, "https://gist.github.com/x", true},
+		{search.MatchHost, "https://gist.github.com/x", false},
+		{search.MatchHost, "https://github.com/settings", true},
+		{search.MatchStartsWith, "https://github.com/login?return_to=x", true},
+		{search.MatchStartsWith, "https://github.com/", false},
+		{search.MatchExact, "https://github.com/login", true},
+		{search.MatchExact, "https://github.com/login?x", false},
+		{search.MatchNever, "https://github.com/login", false},
+	} {
+		if got := search.MatchesPage(login, tc.page, tc.def); got != tc.want {
+			t.Errorf("by %d on %s: %v", tc.def, tc.page, got)
+		}
+	}
+	// A URI's own match detection goes before the default.
+	if !search.MatchesPage(bw.URI{URI: "https://github.com", Match: m(search.MatchDomain)}, "https://gist.github.com", search.MatchNever) {
+		t.Error("the URI's own match detection didn't hold")
 	}
 }
 
@@ -158,7 +185,7 @@ func TestForApp(t *testing.T) {
 	if got := names(ix.ForApp("com.github.GitHubClient", "GitHub")); !slices.Equal(got, []string{"GitHub"}) {
 		t.Errorf("GitHub app: %q", got)
 	}
-	if got := names(ix.ForPage("https://github.com/settings")); !slices.Equal(got, []string{"GitHub"}) {
+	if got := names(ix.ForPage("https://github.com/settings", search.MatchDomain)); !slices.Equal(got, []string{"GitHub"}) {
 		t.Errorf("github page: %q", got)
 	}
 }

@@ -132,6 +132,11 @@ Hold ⌥ to see passwords. Click a field to copy it, which keeps Quick Access
 open, unlike ↩, or drag it into a field of another app. The button of a website opens it, and fills the login in. Copied passwords and codes are marked concealed for clipboard
 managers, and cleared after 90 seconds unless you copied something else.
 
+A login's websites match a page by their own URI match detection, or where
+they don't say, by Settings → Filling → Default URI match detection: Base
+domain, unless you choose Host, Starts with, Exact or Never. Lense suggests
+the logins of the page you're on by it, and fills no page it doesn't match.
+
 ### Search filters
 
 | Filter | Finds |

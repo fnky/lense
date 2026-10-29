@@ -30,6 +30,10 @@ type config struct {
 	// ClearClipboard is how many seconds copied secrets stay on the
 	// clipboard; 0 forever.
 	ClearClipboard int `json:"clearClipboard"`
+	// URIMatch is how a login's websites match a page where they don't
+	// say, as Bitwarden's default URI match detection: search.MatchDomain
+	// and the others.
+	URIMatch int `json:"uriMatch"`
 
 	// Material is what the window shows behind its content: "solid", or a
 	// material of macOS, which blurs what is behind the window.

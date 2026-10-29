@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"lense/internal/macos"
+	"lense/internal/search"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -96,7 +97,7 @@ func (a *app) settingsView(c *ui.Context, k ink) {
 			})
 			section(c, k, "Filling", func() {
 				trusted := a.sys.trusted(false)
-				detail := fmt.Sprintf("%s types your username and password into the browser or app you came from, and %s into the website it opens.",
+				detail := fmt.Sprintf("%s types your username and password into the page you came from, when it's one of the login's websites, or into the app; elsewhere, and with %s, into the website it opens.",
 					a.cfg.keyHint("default"), a.cfg.keyHint("open-fill"))
 				settingRow(c, k, "Accessibility access", detail, func() {
 					if trusted {
@@ -114,6 +115,7 @@ func (a *app) settingsView(c *ui.Context, k ink) {
 				if !trusted {
 					c.After(2 * time.Second) // notice as it's allowed
 				}
+				a.uriMatchRow(c, k)
 			})
 			a.shortcutsSection(c.Key("keys"), k)
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Margin(4, 0, 0, 0).FontSize(11).TextColor(k.faint).Children(func() {
@@ -139,6 +141,46 @@ func (a *app) accountStatus() string {
 		}
 	}
 	return s
+}
+
+// uriMatches are the ways a login's websites may match a page, as
+// Bitwarden's default URI match detection offers them.
+var uriMatches = []struct {
+	match int
+	label string
+}{
+	{search.MatchDomain, "Base domain"},
+	{search.MatchHost, "Host"},
+	{search.MatchStartsWith, "Starts with"},
+	{search.MatchExact, "Exact"},
+	{search.MatchNever, "Never"},
+}
+
+// uriMatchRow chooses how a login's websites match a page where they
+// don't say: for the suggestions, and the pages Lense fills.
+func (a *app) uriMatchRow(c *ui.Context, k ink) {
+	labels := make([]string, len(uriMatches))
+	sel := uriMatches[0].label
+	for i, m := range uriMatches {
+		labels[i] = m.label
+		if m.match == a.cfg.URIMatch {
+			sel = m.label
+		}
+	}
+	settingRow(c, k, "Default URI match detection", "How a login's websites match the page you're on, where they don't say: Lense suggests the logins it matches, and fills no other page. Base domain is recommended.", func() {
+		picker(c.Key("urimatch"), k, &sel, labels).Width(170).OnChange(func() {
+			a.cfg.URIMatch = uriMatches[slices.Index(labels, sel)].match
+			a.changed()
+			a.rebuild(true)
+		})
+	})
+	if a.cfg.URIMatch == search.MatchStartsWith {
+		ui.Row(c).Gap(6).AlignItems(ui.Start).Children(func() {
+			ui.Icon(c, iconAlert).FontSize(13).TextColor(k.warn).Margin(1, 0, 0, 0)
+			ui.Text(c, "'Starts with' is an advanced option with increased risk of exposing credentials.").
+				FontSize(11.5).TextColor(k.warn).LineHeight(1.35).Shrink(1)
+		})
+	}
 }
 
 func section(c *ui.Context, k ink, title string, build func()) {

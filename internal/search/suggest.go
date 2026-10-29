@@ -154,12 +154,13 @@ const (
 )
 
 // MatchesPage reports whether a login's URI is for the page at pageURL,
-// as Bitwarden matches them: by default, on the same base domain.
-func MatchesPage(u bw.URI, pageURL string) bool {
+// as Bitwarden matches them: by the URI's match detection, else by def,
+// as MatchDomain, on the same base domain.
+func MatchesPage(u bw.URI, pageURL string, def int) bool {
 	if u.URI == "" || pageURL == "" {
 		return false
 	}
-	match := MatchDomain
+	match := def
 	if u.Match != nil {
 		match = *u.Match
 	}
@@ -195,15 +196,16 @@ func port(uri string) string {
 	return ""
 }
 
-// ForPage returns the logins for the page at pageURL.
-func (ix *Index) ForPage(pageURL string) []*bw.Item {
+// ForPage returns the logins for the page at pageURL, matching their
+// URIs by def where they don't say how.
+func (ix *Index) ForPage(pageURL string, def int) []*bw.Item {
 	var out []*bw.Item
 	for _, it := range ix.v.Items {
 		if it.Login == nil || it.Archived {
 			continue
 		}
 		for _, u := range it.Login.URIs {
-			if MatchesPage(u, pageURL) {
+			if MatchesPage(u, pageURL, def) {
 				out = append(out, it)
 				break
 			}
