@@ -22,14 +22,33 @@ import (
 type Request struct {
 	Username, Password string
 	Page               string // a page to open first, and fill once it shows
+	// Matches reports whether a page is one of the login's websites, as
+	// a browser's must be to be filled; nil matches none.
+	Matches func(url string) bool
 }
 
 var (
-	// ErrNoField means no username or password field showed to fill.
+	// ErrNoField means no login form showed to fill: a username field,
+	// before a password field or named so, or a password field.
 	ErrNoField = errors.New("no field to fill")
 	// ErrNotTaken means a field didn't take what was typed into it.
 	ErrNotTaken = errors.New("a field didn't take what was typed")
+	// ErrInFrame means the login form is in a frame of the page, as
+	// another site's: a fill types into no frame.
+	ErrInFrame = errors.New("the login form is in a frame")
 )
+
+// PageError means the login form is on a page that isn't one of the
+// login's websites, at URL, or on one the browser doesn't tell, "":
+// nothing is typed there.
+type PageError struct{ URL string }
+
+func (e *PageError) Error() string {
+	if e.URL == "" {
+		return "the browser doesn't tell which page it shows"
+	}
+	return "the page isn't one of the login's websites: " + e.URL
+}
 
 // Field is a field of another app.
 type Field interface {
@@ -45,6 +64,11 @@ type Field interface {
 	// OnPage reports whether the field is on a web page, rather than in
 	// a browser's own controls, as its address field.
 	OnPage() bool
+	// InFrame reports whether the field is in a frame of the page.
+	InFrame() bool
+	// PageURL is the address of the page the field is on, or "": of the
+	// frame, for one in a frame.
+	PageURL() string
 	Focus() bool
 	Same(Field) bool
 }
@@ -110,7 +134,7 @@ func Fill(ctx context.Context, kb Keyboard, target macos.App, req Request) error
 	if target.PID == 0 {
 		return ErrNoField
 	}
-	f := filler{ctx: ctx, kb: kb, pid: target.PID, browser: macos.IsBrowser(target.BundleID)}
+	f := filler{ctx: ctx, kb: kb, req: req, pid: target.PID, bundle: target.BundleID, browser: macos.IsBrowser(target.BundleID)}
 	if f.browser {
 		kb.Prepare(f.pid)
 	}
@@ -130,7 +154,9 @@ func Fill(ctx context.Context, kb Keyboard, target macos.App, req Request) error
 type filler struct {
 	ctx     context.Context
 	kb      Keyboard
+	req     Request
 	pid     int
+	bundle  string
 	browser bool
 }
 
@@ -159,36 +185,90 @@ func (f filler) fill(req Request, wait time.Duration) error {
 }
 
 // find finds the fields to fill, waiting for a page to load and show
-// them: the field with the focus, and on a page, the password field
-// after it; on a page without one, its login form's fields.
+// them on one of the login's websites.
 func (f filler) find(wait time.Duration) (user, pass Field, err error) {
 	deadline := time.Now().Add(wait)
+	err = ErrNoField
 	for {
 		if loaded, known := f.kb.PageLoaded(f.pid); !f.browser || !known || loaded {
-			at := f.kb.Focused(f.pid)
-			if at != nil && f.browser && !at.OnPage() {
-				at = nil // the address field, say: the page's form is the one to fill
-			}
-			switch kind(at) {
-			case macos.FieldPassword:
-				return nil, at, nil
-			case macos.FieldText:
-				if f.browser {
-					_, pass = pick(f.kb.TextFields(f.pid, at), at)
+			if user, pass = f.fields(); user != nil || pass != nil {
+				field := user
+				if field == nil {
+					field = pass
 				}
-				return at, pass, nil
-			}
-			if f.browser {
-				if user, pass = pick(f.kb.TextFields(f.pid, at), nil); user != nil || pass != nil {
+				// A page on its way to the login's, as through a redirect,
+				// may get there yet.
+				if err = f.onLoginPage(field); err == nil {
 					return user, pass, nil
 				}
 			}
 		}
 		if !time.Now().Before(deadline) || f.ctx.Err() != nil {
-			return nil, nil, ErrNoField
+			return nil, nil, err
 		}
 		sleep(f.ctx, 3*poll)
 	}
+}
+
+// fields finds the fields to fill: in an app, the field with the focus;
+// on a page, the login form's, around the field with the focus.
+func (f filler) fields() (user, pass Field) {
+	at := f.kb.Focused(f.pid)
+	if !f.browser {
+		switch kind(at) {
+		case macos.FieldPassword:
+			return nil, at
+		case macos.FieldText:
+			return at, nil
+		}
+		return nil, nil
+	}
+	if at != nil && (!at.OnPage() || at.InFrame()) {
+		at = nil // the address field, say: the page's form is the one to fill
+	}
+	switch kind(at) {
+	case macos.FieldPassword:
+		return nil, at
+	case macos.FieldText:
+	default:
+		at = nil
+	}
+	// The fields of frames are no login's to fill, but tell why a page
+	// with its form in one is left as it is.
+	var page, framed []Field
+	for _, fl := range f.kb.TextFields(f.pid, at) {
+		if fl.InFrame() {
+			framed = append(framed, fl)
+		} else {
+			page = append(page, fl)
+		}
+	}
+	if user, pass = pick(page, at); user == nil && pass == nil {
+		return pick(framed, nil)
+	}
+	return user, pass
+}
+
+// onLoginPage checks that a field a browser shows is on one of the
+// login's websites: nowhere else does a fill type.
+func (f filler) onLoginPage(field Field) error {
+	if !f.browser {
+		return nil
+	}
+	if field.InFrame() {
+		return ErrInFrame
+	}
+	u := field.PageURL()
+	if u == "" {
+		u, _ = f.kb.BrowserURL(f.ctx, f.bundle)
+	}
+	switch {
+	case u == "":
+		return &PageError{}
+	case f.req.Matches == nil || !f.req.Matches(u):
+		return &PageError{URL: u}
+	}
+	return nil
 }
 
 // next goes from the username's field to the password's, with Tab, as
@@ -201,7 +281,7 @@ func (f filler) next(user, pass Field) Field {
 		at := f.kb.Focused(f.pid)
 		return at != nil && !at.Same(user)
 	})
-	if at := f.kb.Focused(f.pid); kind(at) == macos.FieldPassword && (!f.browser || at.OnPage()) {
+	if at := f.kb.Focused(f.pid); kind(at) == macos.FieldPassword && (!f.browser || at.OnPage() && !at.InFrame()) {
 		return at
 	}
 	if pass != nil || !f.browser {
@@ -218,6 +298,11 @@ func (f filler) next(user, pass Field) Field {
 // hold it: a field that takes less, as one that drops keys, gets it once
 // more, typed slower.
 func (f filler) typeInto(field Field, text string, secret bool) error {
+	// The page may have gone elsewhere since: to another site, say, after
+	// the username.
+	if err := f.onLoginPage(field); err != nil {
+		return err
+	}
 	for _, pause := range []time.Duration{keyPause, slowPause} {
 		if !f.focus(field) {
 			return ErrNotTaken
@@ -288,54 +373,58 @@ func holds(field Field, text string, secret bool) bool {
 }
 
 // pick picks the fields of a login form among the text fields of a page,
-// in the page's order. With the focus on one, at, it takes that one, and
-// the first password field after it. Without, it takes the first
-// password field, and the text field nearest before it for the
-// username; of a page that asks for the username alone, the text field
-// that names itself so, or its only one.
+// in the page's order: the first password field, and the text field
+// nearest before it for the username; of a page that asks for the
+// username alone, the text field that names itself so. Any other text
+// field is no username's, as a search field: a page without a login
+// form gets nothing. The field with the focus, at, is the username's
+// when it is the one before a password field, or named so.
 func pick(fields []Field, at Field) (user, pass Field) {
+	kinds := make([]macos.FieldKind, len(fields))
+	for i, fl := range fields {
+		kinds[i] = fl.Kind()
+	}
+	// before is the text field nearest before field i, or -1.
+	before := func(i int) int {
+		for j := i - 1; j >= 0; j-- {
+			if kinds[j] == macos.FieldText {
+				return j
+			}
+		}
+		return -1
+	}
 	if at != nil {
 		for i, fl := range fields {
 			if !fl.Same(at) {
 				continue
 			}
-			for _, p := range fields[i+1:] {
-				if p.Kind() == macos.FieldPassword {
-					return at, p
+			for j := i + 1; j < len(fields); j++ {
+				if kinds[j] == macos.FieldPassword {
+					if before(j) == i {
+						return at, fields[j]
+					}
+					break
 				}
 			}
-			return at, nil
+			if loginHint.MatchString(at.Hint()) {
+				return at, nil
+			}
+			break
 		}
-		return nil, nil
-	}
-	kinds := make([]macos.FieldKind, len(fields))
-	for i, fl := range fields {
-		kinds[i] = fl.Kind()
 	}
 	for i, k := range kinds {
 		if k != macos.FieldPassword {
 			continue
 		}
-		for j := i - 1; j >= 0; j-- {
-			if kinds[j] == macos.FieldText {
-				return fields[j], fields[i]
-			}
+		if j := before(i); j >= 0 {
+			return fields[j], fields[i]
 		}
 		return nil, fields[i]
 	}
-	var texts []Field
 	for i, fl := range fields {
-		if kinds[i] == macos.FieldText {
-			texts = append(texts, fl)
-		}
-	}
-	for _, fl := range texts {
-		if loginHint.MatchString(fl.Hint()) {
+		if kinds[i] == macos.FieldText && loginHint.MatchString(fl.Hint()) {
 			return fl, nil
 		}
-	}
-	if len(texts) == 1 {
-		return texts[0], nil
 	}
 	return nil, nil
 }

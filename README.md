@@ -152,7 +152,11 @@ Filters combine with words and with each other, and complete as you type `=`.
 
 - **Accessibility**, to fill other apps: Lense types into text fields of one
   line, the one with the keyboard focus, or a page's login form, and checks
-  that each field took what it typed before it goes on to the next.
+  that each field took what it typed before it goes on to the next. In a
+  browser it fills only a login form: a password field, and the username
+  field before it or one named so, never a search field or a page's only
+  field; only on the pages of the login's websites, checked as it types
+  each field; and never in a frame of the page.
 - **Automation** of your browser, to read the page it shows, for suggestions.
   Safari and Chromium browsers tell it; Firefox doesn't.
 

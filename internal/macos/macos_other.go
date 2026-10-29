@@ -40,6 +40,8 @@ func (e *Element) Length() (int, bool)                   { return 0, false }
 func (e *Element) Selected() (int, bool)                 { return 0, false }
 func (e *Element) Hint() string                          { return "" }
 func (e *Element) OnPage() bool                          { return false }
+func (e *Element) InFrame() bool                         { return false }
+func (e *Element) PageURL() string                       { return "" }
 func (e *Element) Focus() bool                           { return false }
 func CopySecret(text string, concealed bool) int         { return -1 }
 func ClearIfUnchanged(count int) bool                    { return false }

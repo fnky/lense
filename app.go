@@ -89,6 +89,9 @@ type sealedSecret interface {
 type fillRequest struct {
 	username, password string
 	page               string // a page to open first, and fill once it shows
+	// matches reports whether a page is one of the login's websites,
+	// which a browser's must be to be filled.
+	matches func(url string) bool
 }
 
 type page int
@@ -1552,18 +1555,49 @@ func (a *app) fillInto(it *bw.Item, page string) {
 		a.changed()
 		a.sys.hide()
 		code, _, hasCode := a.code(it)
+		matches := func(url string) bool {
+			for _, u := range l.URIs {
+				if search.MatchesPage(u, url) {
+					return true
+				}
+			}
+			return false
+		}
 		a.spawn(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
-			err := a.sys.fill(ctx, target, fillRequest{username: l.Username, password: password, page: page})
+			err := a.sys.fill(ctx, target, fillRequest{username: l.Username, password: password, page: page, matches: matches})
 			a.post(func() {
-				if err != nil {
+				var pe *fill.PageError
+				switch {
+				case errors.As(err, &pe):
+					// Typed nowhere, and kept off the clipboard: the page
+					// may be after it.
+					browser := browserName(target)
+					if page != "" {
+						browser = a.defaultBrowserName()
+					}
+					detail := fmt.Sprintf("%s doesn't tell Lense which page it shows, so Lense typed nothing there.", browser)
+					if pe.URL != "" {
+						detail = fmt.Sprintf("Lense fills only the websites of %s, and %s isn't one of them.", name, search.Host(pe.URL))
+					}
+					a.prob = &problem{title: "Didn't fill the page", detail: detail}
+					a.sys.show()
+					return
+				case errors.Is(err, fill.ErrInFrame):
+					a.prob = &problem{
+						title:  "Didn't fill the page",
+						detail: "The login form is in a frame of the page, as another website's would be, and Lense fills no frames.",
+					}
+					a.sys.show()
+					return
+				case err != nil:
 					a.sys.copy(password, true)
 					where := target.Name
 					if page != "" || where == "" {
 						where = "the page"
 					}
-					why := "No username or password field showed"
+					why := "No login form showed"
 					if errors.Is(err, fill.ErrNotTaken) {
 						why = "Not all of what Lense typed stayed in the fields"
 					}
@@ -1582,6 +1616,22 @@ func (a *app) fillInto(it *bw.Item, page string) {
 			})
 		})
 	})
+}
+
+// browserName names the browser a fill was for.
+func browserName(target macos.App) string {
+	if macos.IsBrowser(target.BundleID) && target.Name != "" {
+		return target.Name
+	}
+	return "The browser"
+}
+
+// defaultBrowserName names the browser websites open in.
+func (a *app) defaultBrowserName() string {
+	if a.browser != "" {
+		return a.browser
+	}
+	return "The browser"
 }
 
 func (a *app) openDetail() {

@@ -1087,6 +1087,71 @@ func TestOpenAndFillMenu(t *testing.T) {
 	}
 }
 
+func TestFillsOnlyTheLoginsPages(t *testing.T) {
+	f := bwtest.Sample()
+	f.Add(bwtest.Item{Type: bw.TypeLogin, Name: "Mainframe", Login: &bwtest.Login{Username: "ada", Password: "m41nfr4me"}}, false)
+	f.Add(bwtest.Item{Type: bw.TypeLogin, Name: "Tracker", Login: &bwtest.Login{Username: "ada", Password: "tr4ck",
+		URIs: []bw.URI{{URI: "https://tracker.example.com/login"}, {URI: "status.example.com"}}}}, false)
+	h := newHarness(t, f, true)
+	h.unlock()
+	// Safari shows a page of another site.
+	h.sys.pageURLs = map[string]string{"com.apple.Safari": "https://example.net/"}
+	h.a.setFront(macos.App{PID: 7, Name: "Safari", BundleID: "com.apple.Safari"})
+	h.settle()
+
+	// A login without a website fills no browser's page: Return copies.
+	h.tt.Type("mainframe")
+	h.settle()
+	h.has("Copy password")
+	h.key(0, ui.KeyEnter)
+	if len(h.sys.filled) != 0 || h.sys.last() != "m41nfr4me" {
+		t.Fatalf("filled %v, copied %q", h.sys.filled, h.sys.copied)
+	}
+	// The menu offers the login's websites, not the page Safari shows.
+	for range "mainframe" {
+		h.key(0, ui.KeyBackspace)
+	}
+	h.tt.Type("tracker")
+	h.settle()
+	h.key(0, ui.KeyEnter)
+	if cs := h.a.menuChoices(h.a.selected()); h.a.mode != modeFillMenu || len(cs) != 2 || cs[1].page == "" {
+		t.Fatalf("mode %v, choices %+v", h.a.mode, cs)
+	}
+	h.key(0, ui.KeyEnter)
+	if len(h.sys.filled) != 1 {
+		t.Fatalf("filled %v", h.sys.filled)
+	}
+	// The fill types only into the pages of the login's websites.
+	match := h.sys.filled[0].matches
+	for u, want := range map[string]bool{
+		"https://tracker.example.com/login": true,
+		"https://status.example.com/":       true,
+		"https://example.net/":              false,
+		"https://tracker.example.org/login": false,
+	} {
+		if match(u) != want {
+			t.Errorf("matches %s: %v", u, !want)
+		}
+	}
+
+	// A fill that found another site's page, or a frame, says so, and
+	// keeps the password off the clipboard.
+	for err, says := range map[error]string{
+		&fill.PageError{URL: "https://example.net/login"}: "Lense fills only the websites of Tracker, and example.net isn't one of them.",
+		&fill.PageError{}: "The browser doesn't tell Lense which page it shows, so Lense typed nothing there.",
+		fill.ErrInFrame:   "The login form is in a frame of the page, as another website's would be, and Lense fills no frames.",
+	} {
+		h.sys.fillErr, h.a.prob = err, nil
+		copied := len(h.sys.copied)
+		h.key(ui.Shift, ui.KeyEnter)
+		h.key(0, ui.KeyEnter)
+		h.has("Didn't fill the page", says)
+		if len(h.sys.copied) != copied {
+			t.Errorf("%v: copied %q", err, h.sys.copied[copied:])
+		}
+	}
+}
+
 func TestOneWebsiteOpensAtOnce(t *testing.T) {
 	h := newHarness(t, nil, true)
 	h.unlock()

@@ -118,18 +118,61 @@ func (e *Element) Hint() string {
 
 // OnPage reports whether e is on a web page, rather than in the app's own
 // controls, as a browser's address field.
-func (e *Element) OnPage() bool {
+func (e *Element) OnPage() bool { return e.pages() > 0 }
+
+// InFrame reports whether e is on a page inside another, in a frame.
+func (e *Element) InFrame() bool { return e.pages() > 1 }
+
+// pages counts the web pages e is on: the page of a frame, and the
+// page the frame is on.
+func (e *Element) pages() int {
 	if e == nil || load() != nil {
-		return false
+		return 0
 	}
-	on := false
+	n := 0
 	withPool(func() {
-		if web := pageOf(e.ref); web != 0 {
-			on = true
-			cfRelease(web)
+		cur := cfRetain(e.ref)
+		for i := 0; cur != 0 && i < 64; i++ {
+			if stringAttr(cur, "AXRole") == "AXWebArea" {
+				n++
+			}
+			parent := copyAttr(cur, "AXParent")
+			cfRelease(cur)
+			cur = parent
+		}
+		if cur != 0 {
+			cfRelease(cur)
 		}
 	})
-	return on
+	return n
+}
+
+// PageURL returns the address of the web page e is on, or "": of the
+// frame, for a field in one.
+func (e *Element) PageURL() string {
+	if e == nil || load() != nil {
+		return ""
+	}
+	u := ""
+	withPool(func() {
+		web := pageOf(e.ref)
+		if web == 0 {
+			return
+		}
+		defer cfRelease(web)
+		v := copyAttr(web, "AXURL")
+		if v == 0 {
+			return
+		}
+		defer cfRelease(v)
+		switch {
+		case objc.Send[bool](objc.ID(v), sel("isKindOfClass:"), class("NSURL")):
+			u = goString(objc.ID(v).Send(sel("absoluteString")))
+		case objc.Send[bool](objc.ID(v), sel("isKindOfClass:"), class("NSString")):
+			u = goString(objc.ID(v))
+		}
+	})
+	return u
 }
 
 // Focus gives e the keyboard focus, reporting whether the app took the

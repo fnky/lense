@@ -21,7 +21,9 @@ func TestMain(m *testing.M) {
 // page is an app showing a form, as accessibility would show it: its
 // elements in the order of Tab, fields and others, as links.
 type page struct {
-	app      macos.App
+	app macos.App
+	// url is the address of the page; "" for one the browser doesn't tell.
+	url      string
 	elements []*element
 	focus    *element
 	// lag is how many looks the focus takes to move after Tab.
@@ -48,9 +50,10 @@ type element struct {
 	field bool // a text or password field, not a link or button
 	value string
 	hint  string
-	// offPage is a browser's own field, as its address field.
-	offPage bool
-	gone    bool
+	// offPage is a browser's own field, as its address field; frame is a
+	// field in a frame of the page.
+	offPage, frame bool
+	gone           bool
 	// drop is how many of the keys typed the field drops, the first time.
 	drop int
 	// silent is a password field that tells nothing of what it holds.
@@ -58,7 +61,7 @@ type element struct {
 }
 
 func newPage(browser bool, els ...*element) *page {
-	p := &page{app: macos.App{PID: 7, Name: "Notes", BundleID: "com.apple.Notes"}}
+	p := &page{app: macos.App{PID: 7, Name: "Notes", BundleID: "com.apple.Notes"}, url: loginPage}
 	if browser {
 		p.app = macos.App{PID: 7, Name: "Safari", BundleID: "com.apple.Safari"}
 	}
@@ -88,7 +91,7 @@ func (p *page) Frontmost() macos.App { return p.app }
 func (p *page) Activate(int) bool    { return true }
 func (p *page) OpenURL(u string)     { p.typed = append(p.typed, "open "+u) }
 func (p *page) BrowserURL(context.Context, string) (string, error) {
-	return "https://example.com/login", nil
+	return p.url, nil
 }
 func (p *page) Prepare(int)                 {}
 func (p *page) PageLoaded(int) (bool, bool) { return true, true }
@@ -205,8 +208,16 @@ func (e *element) Selected() (int, bool) {
 	return 0, true
 }
 
-func (e *element) Hint() string      { return e.hint }
-func (e *element) OnPage() bool      { return !e.offPage }
+func (e *element) Hint() string  { return e.hint }
+func (e *element) OnPage() bool  { return !e.offPage }
+func (e *element) InFrame() bool { return e.frame }
+
+func (e *element) PageURL() string {
+	if e.offPage {
+		return ""
+	}
+	return e.p.url
+}
 func (e *element) Same(o Field) bool { return e == o }
 
 func (e *element) Focus() bool {
@@ -217,7 +228,9 @@ func (e *element) Focus() bool {
 	return true
 }
 
-var login = Request{Username: "ada", Password: "s3cret!"}
+const loginPage = "https://example.com/login"
+
+var login = Request{Username: "ada", Password: "s3cret!", Matches: func(u string) bool { return u == loginPage }}
 
 func fill(t *testing.T, p *page, req Request) error {
 	t.Helper()
@@ -265,7 +278,9 @@ func TestTabGoesToALink(t *testing.T) {
 func TestPasswordFieldShowsLate(t *testing.T) {
 	pass := password("pass")
 	pass.gone = true
-	p := newPage(true, text("user"), link("Next"), pass)
+	user := text("user")
+	user.hint = "email or phone"
+	p := newPage(true, user, link("Next"), pass)
 	p.focus = p.find("user")
 	p.onType = func(p *page, e *element) {
 		if e.name == "user" {
@@ -279,7 +294,9 @@ func TestPasswordFieldShowsLate(t *testing.T) {
 }
 
 func TestUsernameAlone(t *testing.T) {
-	p := newPage(true, text("user"), link("Next"))
+	user := text("user")
+	user.hint = "username"
+	p := newPage(true, user, link("Next"))
 	p.focus = p.find("user")
 	if err := fill(t, p, login); err != nil {
 		t.Fatal(err)
@@ -422,11 +439,122 @@ func TestNotTaken(t *testing.T) {
 func TestOpensThePage(t *testing.T) {
 	p := newPage(true, text("user"), password("pass"))
 	p.focus = p.find("user")
-	if err := fill(t, p, Request{Username: "ada", Password: "s3cret!", Page: "https://example.com/login"}); err != nil {
+	req := login
+	req.Page = loginPage
+	if err := fill(t, p, req); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.HasPrefix(strings.Join(p.typed, ","), "open https://example.com/login,") {
 		t.Errorf("typed %q", p.typed)
 	}
 	p.holds(t, "user", "ada", "pass", "s3cret!")
+}
+
+func (p *page) nothingTyped(t *testing.T) {
+	t.Helper()
+	for _, e := range p.elements {
+		if e.value != "" {
+			t.Errorf("%s holds %q; typed %q", e.name, e.value, p.typed)
+		}
+	}
+}
+
+func TestNoLoginForm(t *testing.T) {
+	// A page of the website without its login form, as its home page.
+	p := newPage(true, text("search"), link("Sign in"))
+	p.focus = p.find("search")
+	if err := fill(t, p, login); !errors.Is(err, ErrNoField) {
+		t.Errorf("a search field with the focus: %v", err)
+	}
+	p.nothingTyped(t)
+	p = newPage(true, link("Home"), text("newsletter"))
+	if err := fill(t, p, login); !errors.Is(err, ErrNoField) {
+		t.Errorf("a page's only text field: %v", err)
+	}
+	p.nothingTyped(t)
+}
+
+func TestSearchFieldBeforeTheForm(t *testing.T) {
+	p := newPage(true, text("search"), text("user"), password("pass"))
+	p.focus = p.find("search")
+	if err := fill(t, p, login); err != nil {
+		t.Fatal(err)
+	}
+	p.holds(t, "search", "", "user", "ada", "pass", "s3cret!")
+}
+
+func TestOnlyTheLoginsWebsites(t *testing.T) {
+	p := newPage(true, text("user"), password("pass"))
+	p.focus, p.url = p.find("user"), "https://example.net/login"
+	var pe *PageError
+	if err := fill(t, p, login); !errors.As(err, &pe) || pe.URL != "https://example.net/login" {
+		t.Errorf("another site: %v", err)
+	}
+	p.nothingTyped(t)
+	// A request that matches no page fills none.
+	p = newPage(true, text("user"), password("pass"))
+	p.focus = p.find("user")
+	if err := fill(t, p, Request{Username: "ada", Password: "s3cret!"}); !errors.As(err, &pe) {
+		t.Errorf("no websites: %v", err)
+	}
+	p.nothingTyped(t)
+}
+
+func TestPageThatDoesNotTell(t *testing.T) {
+	p := newPage(true, text("user"), password("pass"))
+	p.focus, p.url = p.find("user"), ""
+	var pe *PageError
+	if err := fill(t, p, login); !errors.As(err, &pe) || pe.URL != "" {
+		t.Errorf("err %v", err)
+	}
+	p.nothingTyped(t)
+}
+
+func TestPageGoesElsewhere(t *testing.T) {
+	// After the username, the page goes to another site: no password there.
+	p := newPage(true, text("user"), password("pass"))
+	p.focus = p.find("user")
+	p.onType = func(p *page, e *element) { p.url = "https://example.net/" }
+	var pe *PageError
+	if err := fill(t, p, login); !errors.As(err, &pe) {
+		t.Errorf("err %v", err)
+	}
+	p.holds(t, "user", "ada", "pass", "")
+}
+
+func TestAppsHaveNoPages(t *testing.T) {
+	p := newPage(false, text("user"), password("pass"))
+	p.focus, p.url = p.find("user"), ""
+	if err := fill(t, p, Request{Username: "ada", Password: "s3cret!"}); err != nil {
+		t.Fatal(err)
+	}
+	p.holds(t, "user", "ada", "pass", "s3cret!")
+}
+
+func framed(e *element) *element { e.frame = true; return e }
+
+func TestNotInFrames(t *testing.T) {
+	// A login form in a frame, as another site's on the page.
+	p := newPage(true, framed(text("user")), framed(password("pass")))
+	p.focus = p.find("user")
+	if err := fill(t, p, login); !errors.Is(err, ErrInFrame) {
+		t.Errorf("a form in a frame: %v", err)
+	}
+	p.nothingTyped(t)
+	// The page's own form, beside one in a frame, is the one filled.
+	p = newPage(true, framed(text("other")), framed(password("other-pass")), text("user"), password("pass"))
+	p.focus = p.find("other")
+	if err := fill(t, p, login); err != nil {
+		t.Fatal(err)
+	}
+	p.holds(t, "other", "", "other-pass", "", "user", "ada", "pass", "s3cret!")
+	// A password field in a frame after the username's gets nothing, and
+	// says why.
+	p = newPage(true, text("user"), framed(password("pass")))
+	p.find("user").hint = "username"
+	p.focus = p.find("user")
+	if err := fill(t, p, login); !errors.Is(err, ErrInFrame) {
+		t.Errorf("a password field in a frame: %v", err)
+	}
+	p.holds(t, "user", "ada", "pass", "")
 }

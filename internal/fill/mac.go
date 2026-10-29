@@ -60,6 +60,8 @@ func (f macField) Length() (int, bool)   { return f.e.Length() }
 func (f macField) Selected() (int, bool) { return f.e.Selected() }
 func (f macField) Hint() string          { return f.e.Hint() }
 func (f macField) OnPage() bool          { return f.e.OnPage() }
+func (f macField) InFrame() bool         { return f.e.InFrame() }
+func (f macField) PageURL() string       { return f.e.PageURL() }
 func (f macField) Focus() bool           { return f.e.Focus() }
 
 func (f macField) Same(o Field) bool {

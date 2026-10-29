@@ -433,13 +433,15 @@ func (a *app) onSite(it *bw.Item) bool {
 	return a.suggested[it.ID] && a.fillTarget(it) != ""
 }
 
-// fillTarget names where the user was, which Return can fill, or "".
+// fillTarget names where the user was, which Return can fill, or "": a
+// browser on a page of one of the login's websites, or an app with a
+// field focused.
 func (a *app) fillTarget(it *bw.Item) string {
 	t := a.front.app
 	if it == nil || it.Login == nil || it.Login.Password.Empty() || t.PID == 0 {
 		return ""
 	}
-	if macos.IsBrowser(t.BundleID) || a.sys.fieldFocused(t) {
+	if macos.IsBrowser(t.BundleID) && a.suggested[it.ID] || !macos.IsBrowser(t.BundleID) && a.sys.fieldFocused(t) {
 		if t.Name == "" {
 			return "the app"
 		}
