@@ -25,6 +25,7 @@ var (
 	cfRelease func(uintptr)
 	cfRetain  func(uintptr) uintptr
 	cfEqual   func(a, b uintptr) bool
+	cfHash    func(uintptr) uint64
 
 	// CoreGraphics
 	cgEventSourceCreate             func(state int32) uintptr
@@ -38,6 +39,9 @@ var (
 	axIsProcessTrustedWithOptions func(opts uintptr) bool
 	axCreateApplication           func(pid int32) uintptr
 	axCopyAttributeValue          func(el uintptr, attr uintptr, out *uintptr) int32
+	axIsAttributeSettable         func(el uintptr, attr uintptr, out *bool) int32
+	axCopyElementAtPosition       func(app uintptr, x, y float32, out *uintptr) int32
+	axGetPid                      func(el uintptr, pid *int32) int32
 	axCopyParameterizedValue      func(el uintptr, attr uintptr, param uintptr, out *uintptr) int32
 	axSetAttributeValue           func(el uintptr, attr uintptr, value uintptr) int32
 	axValueGetValue               func(value uintptr, typ int32, out unsafe.Pointer) bool
@@ -86,6 +90,7 @@ func load() error {
 		purego.RegisterLibFunc(&cfRelease, cf, "CFRelease")
 		purego.RegisterLibFunc(&cfRetain, cf, "CFRetain")
 		purego.RegisterLibFunc(&cfEqual, cf, "CFEqual")
+		purego.RegisterLibFunc(&cfHash, cf, "CFHash")
 		purego.RegisterLibFunc(&cgEventSourceCreate, cg, "CGEventSourceCreate")
 		purego.RegisterLibFunc(&cgEventCreateKeyboardEvent, cg, "CGEventCreateKeyboardEvent")
 		purego.RegisterLibFunc(&cgEventKeyboardSetUnicodeString, cg, "CGEventKeyboardSetUnicodeString")
@@ -95,6 +100,9 @@ func load() error {
 		purego.RegisterLibFunc(&axIsProcessTrustedWithOptions, as, "AXIsProcessTrustedWithOptions")
 		purego.RegisterLibFunc(&axCreateApplication, as, "AXUIElementCreateApplication")
 		purego.RegisterLibFunc(&axCopyAttributeValue, as, "AXUIElementCopyAttributeValue")
+		purego.RegisterLibFunc(&axIsAttributeSettable, as, "AXUIElementIsAttributeSettable")
+		purego.RegisterLibFunc(&axCopyElementAtPosition, as, "AXUIElementCopyElementAtPosition")
+		purego.RegisterLibFunc(&axGetPid, as, "AXUIElementGetPid")
 		purego.RegisterLibFunc(&axCopyParameterizedValue, as, "AXUIElementCopyParameterizedAttributeValue")
 		purego.RegisterLibFunc(&axValueGetValue, as, "AXValueGetValue")
 		purego.RegisterLibFunc(&axSetAttributeValue, as, "AXUIElementSetAttributeValue")

@@ -624,7 +624,7 @@ func (m *macSystem) trusted(prompt bool) bool { return macos.Trusted(prompt) }
 
 func (m *macSystem) fill(ctx context.Context, target macos.App, req fillRequest) error {
 	kb := fill.Mac{Open: func(u string) { mygo.Shell.OpenExternal(u) }}
-	return fill.Fill(ctx, kb, target, fill.Request{Username: req.username, Password: req.password, Page: req.page, Matches: req.matches, Origin: req.origin})
+	return fill.Fill(ctx, kb, target, fill.Request{Username: req.username, Password: req.password, Page: req.page, Matches: req.matches, Origin: req.origin, TOTP: req.totp})
 }
 
 // fieldFocused reports whether a text field has the focus in the app,
@@ -636,6 +636,9 @@ func (m *macSystem) fieldFocused(app macos.App) bool {
 func (m *macSystem) defaultBrowser() string { return macos.DefaultBrowser() }
 
 func (m *macSystem) pageURL(ctx context.Context, browser macos.App) string {
+	// The browser builds what it tells of its page as it's asked to: in
+	// time for a fill, asked as Lense shows.
+	macos.EnableWebAccessibility(browser.PID)
 	u, _ := macos.BrowserURL(ctx, browser.BundleID)
 	return u
 }

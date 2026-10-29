@@ -136,8 +136,9 @@ A login's websites match a page by their own URI match detection, or where
 they don't say, by Settings → Filling → Default URI match detection: Base
 domain, unless you choose Host, Starts with, Exact or Never. Lense suggests
 the logins of the page you're on by it, and fills no page it doesn't match.
-After filling a login, Lense copies its one-time password, for the page that
-asks for it next, unless you turn that off there.
+After filling a login, or finding nothing to fill, Lense copies its one-time
+password, for the page that asks for it next, unless you turn that off
+there. As Bitwarden's, it never puts the password on the clipboard itself.
 
 ### Search filters
 
@@ -157,13 +158,19 @@ Filters combine with words and with each other, and complete as you type `=`.
 
 ### Permissions
 
-- **Accessibility**, to fill other apps: Lense types into text fields of one
-  line, the one with the keyboard focus, or a page's login form, and checks
-  that each field took what it typed before it goes on to the next. In a
-  browser it fills only a login form: a password field, and the username
-  field before it or one named so, never a search field or a page's only
-  field; only on the pages of the login's websites, checked as it types
-  each field; and never in a frame of the page.
+- **Accessibility**, to fill other apps. A browser's page Lense fills as
+  Bitwarden's browser extension does: it finds the login form's fields by
+  their type, identifier, label and placeholder, as the extension does by
+  their HTML; the username's, the password's, every one of a form that signs
+  up, and the one-time password's, a box for each digit too; leaves out
+  search, captcha, disabled, readonly and hidden fields, and those of a
+  newsletter; and sets each value at once, as the page's input and change
+  events tell it, then puts the focus on the password field. It fills only
+  the pages of the login's websites, checked as it fills each field, never a
+  frame of the page, and only the browser in front. An app's own fields,
+  which tell less, Lense types into: the one with the keyboard focus, then,
+  with Tab, the password's. It checks that each field took what it was
+  given before it goes on to the next.
 - **Automation** of your browser, to read the page it shows, for suggestions.
   Safari and Chromium browsers tell it; Firefox doesn't.
 

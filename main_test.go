@@ -779,10 +779,15 @@ func TestFillFails(t *testing.T) {
 	h.tt.Type("git")
 	h.settle()
 	h.key(0, ui.KeyEnter)
-	if h.sys.shown != 1 || h.sys.last() != "gh-s3cret!" {
+	// As Bitwarden's, it copies the one-time password, not the password.
+	code, _, _ := h.a.code(h.a.selected())
+	if h.sys.shown != 1 || h.sys.last() != code || slices.Contains(h.sys.copied, "gh-s3cret!") {
 		t.Fatalf("shown %d, copied %q", h.sys.shown, h.sys.copied)
 	}
-	h.has("Couldn't fill Safari")
+	h.has("Couldn't fill Safari", "No login form showed. The one-time password of GitHub is on the clipboard.")
+	if len(h.sys.filled) != 1 || h.sys.filled[0].totp != code {
+		t.Errorf("filled %+v", h.sys.filled)
+	}
 }
 
 func TestStoreChangesWhileUnlocked(t *testing.T) {

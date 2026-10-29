@@ -95,6 +95,8 @@ type fillRequest struct {
 	// origin is the origin of the page the user was on, which a fill in
 	// place must stay on; "" for a page opened.
 	origin string
+	// totp is the login's one-time password as the fill begins, or "".
+	totp string
 }
 
 type page int
@@ -1564,6 +1566,10 @@ func (a *app) fillInto(it *bw.Item, page string) {
 		a.filling = true
 		a.sys.hide()
 		code, _, hasCode := a.code(it)
+		totpCode := ""
+		if hasCode {
+			totpCode = code
+		}
 		var origin string
 		if page == "" && macos.IsBrowser(target.BundleID) {
 			origin = fill.Origin(a.front.url)
@@ -1580,7 +1586,7 @@ func (a *app) fillInto(it *bw.Item, page string) {
 		a.spawn(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
-			err := a.sys.fill(ctx, target, fillRequest{username: l.Username, password: password, page: page, matches: matches, origin: origin})
+			err := a.sys.fill(ctx, target, fillRequest{username: l.Username, password: password, page: page, matches: matches, origin: origin, totp: totpCode})
 			a.post(func() {
 				a.filling = false
 				var pe *fill.PageError
@@ -1621,19 +1627,21 @@ func (a *app) fillInto(it *bw.Item, page string) {
 					a.sys.show()
 					return
 				case err != nil:
-					a.sys.copy(password, true)
+					// As Bitwarden's, a fill that found nothing to fill copies
+					// the one-time password, never the password.
 					where := target.Name
 					if page != "" || where == "" {
 						where = "the page"
 					}
-					why := "No login form showed"
+					detail := "No login form showed."
 					if errors.Is(err, fill.ErrNotTaken) {
-						why = "Not all of what Lense typed stayed in the fields"
+						detail = "Not all of what Lense filled stayed in the fields."
 					}
-					a.prob = &problem{
-						title:  "Couldn't fill " + where,
-						detail: fmt.Sprintf("%s. The password of %s is on the clipboard: click the field and paste it.", why, name),
+					if hasCode && a.cfg.CopyTOTP {
+						a.sys.copy(code, true)
+						detail += fmt.Sprintf(" The one-time password of %s is on the clipboard.", name)
 					}
+					a.prob = &problem{title: "Couldn't fill " + where, detail: detail}
 					a.sys.show()
 					return
 				}

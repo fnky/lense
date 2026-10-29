@@ -22,8 +22,40 @@ const (
 )
 
 // Element is an element of another app as accessibility shows it, as a
-// field of a page: the app keeps it while the Element lives.
-type Element struct{ ref uintptr }
+// field of a page: the app keeps it while the Element lives. info is what
+// it told as Fields found it.
+type Element struct {
+	ref  uintptr
+	info *FieldInfo
+}
+
+// FieldInfo is what accessibility tells of a field of a page, read as
+// it's found: what a fill decides by, as Bitwarden decides by a field's
+// HTML.
+type FieldInfo struct {
+	// Type is the field's, as an input's type: text, email, tel,
+	// password, number, search, url, date, select, textarea, checkbox,
+	// radio or button.
+	Type string
+	// ID, Classes and Placeholder are its HTML's; Label is its <label>'s
+	// text or its aria-label, AriaLabel its aria-label, Help its title.
+	ID, Classes, Label, Placeholder, AriaLabel, Help string
+	Value                                            string
+	// Enabled is false for a disabled field, Settable for a readonly one.
+	Enabled, Settable bool
+	// Viewable is whether the user can see it, as Bitwarden's: at least
+	// 10 points square, on the page, and with nothing over its middle
+	// but itself or its label.
+	Viewable bool
+	// Form is the form it is in, 0 for none, and FormHint the form's
+	// identifier and classes.
+	Form     uint64
+	FormHint string
+	// OnPage is whether it is on a web page, rather than in a browser's
+	// own controls, as its address field; InFrame whether in a frame of
+	// the page.
+	OnPage, InFrame bool
+}
 
 // Phase is where a gesture on the trackpad is, as AppKit's NSEventPhase.
 type Phase uint

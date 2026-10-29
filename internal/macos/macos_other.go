@@ -31,16 +31,15 @@ func RoundMaterial(nsWindow uintptr, radius float64)     {}
 func TypeText(pid int, text string, pause time.Duration) {}
 func ModifiersHeld() bool                                { return false }
 func FocusedElement(pid int) *Element                    { return nil }
-func TextFields(pid int, near *Element) []*Element       { return nil }
 func PageLoaded(pid int) (loaded, known bool)            { return false, false }
 func (e *Element) Same(o *Element) bool                  { return false }
 func (e *Element) Kind() FieldKind                       { return FieldNone }
 func (e *Element) Value() string                         { return "" }
 func (e *Element) Length() (int, bool)                   { return 0, false }
 func (e *Element) Selected() (int, bool)                 { return 0, false }
-func (e *Element) Hint() string                          { return "" }
-func (e *Element) OnPage() bool                          { return false }
-func (e *Element) InFrame() bool                         { return false }
+func (e *Element) Info() FieldInfo                       { return FieldInfo{} }
+func Fields(pid int, near *Element) []*Element           { return nil }
+func (e *Element) SetValue(text string) bool             { return false }
 func (e *Element) PageURL() string                       { return "" }
 func (e *Element) Focus() bool                           { return false }
 func CopySecret(text string, concealed bool) int         { return -1 }

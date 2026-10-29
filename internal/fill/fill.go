@@ -1,15 +1,15 @@
-// Package fill types a login into another app, as the user would: its
-// username into the login form's username field, its password into its
-// password field. It sees the app through accessibility, and waits for
-// each step to take before the next: the field to hold what was typed,
-// the focus to move, the page to load.
+// Package fill fills a login into another app. A browser's page it fills
+// as Bitwarden's browser extension does: the login form's username and
+// password fields, and the field that asks for the one-time password,
+// each set at once. An app's own fields, which tell little, it types
+// into as the user would. It sees the app through accessibility, and
+// waits for each step to take before the next.
 package fill
 
 import (
 	"context"
 	"errors"
 	"net/url"
-	"regexp"
 	"strings"
 	"time"
 	"unicode/utf16"
@@ -19,10 +19,12 @@ import (
 	"lense/internal/search"
 )
 
-// Request is a login to type into another app.
+// Request is a login to fill into another app.
 type Request struct {
 	Username, Password string
-	Page               string // a page to open first, and fill once it shows
+	// TOTP is the login's one-time password as the fill begins, or "".
+	TOTP string
+	Page string // a page to open first, and fill once it shows
 	// Matches reports whether a page is one of the login's websites, as
 	// a browser's must be to be filled; nil matches none.
 	Matches func(url string) bool
@@ -34,9 +36,9 @@ type Request struct {
 
 var (
 	// ErrNoField means no login form showed to fill: a username field,
-	// before a password field or named so, or a password field.
+	// a password field, or one for the one-time password.
 	ErrNoField = errors.New("no field to fill")
-	// ErrNotTaken means a field didn't take what was typed into it.
+	// ErrNotTaken means a field didn't take what was put into it.
 	ErrNotTaken = errors.New("a field didn't take what was typed")
 	// ErrInFrame means the login form is in a frame of the page, as
 	// another site's: a fill types into no frame.
@@ -67,24 +69,20 @@ func (e *PageError) Error() string {
 
 // Field is a field of another app.
 type Field interface {
-	Kind() macos.FieldKind
-	// Value is what the field holds; a password field keeps its own.
+	// Info is what the field told of itself as it was found.
+	Info() macos.FieldInfo
+	// Value is what the field holds now; a password field keeps its own.
 	Value() string
 	// Length is how many characters the field holds, where the app tells.
 	Length() (int, bool)
 	// Selected is how many of them are selected, where the app tells.
 	Selected() (int, bool)
-	// Hint is what names the field, in lower case, as "login_field".
-	Hint() string
-	// OnPage reports whether the field is on a web page, rather than in
-	// a browser's own controls, as its address field.
-	OnPage() bool
-	// InFrame reports whether the field is in a frame of the page.
-	InFrame() bool
-	// PageURL is the address of the page the field is on, or "": of the
-	// frame, for one in a frame.
+	// PageURL is the address of the page the field is on, or "".
 	PageURL() string
 	Focus() bool
+	// SetValue puts text into the field at once, as accessibility sets a
+	// value: a page gets its input and change events, as from Bitwarden.
+	SetValue(text string) bool
 	Same(Field) bool
 }
 
@@ -102,9 +100,9 @@ type Keyboard interface {
 	ModifiersHeld() bool
 	// Focused is the field with the keyboard focus in the app, or nil.
 	Focused(pid int) Field
-	// TextFields are the text and password fields of the page near is
-	// on, or of the page the app shows, in the page's order.
-	TextFields(pid int, near Field) []Field
+	// Fields are the fields of the page near is on, or of the page the
+	// app shows, in the page's order, those of its frames too.
+	Fields(pid int, near Field) []Field
 	TypeText(pid int, text string, pause time.Duration)
 	PressKey(pid int, code uint16)
 	SelectAll(pid int)
@@ -113,8 +111,8 @@ type Keyboard interface {
 // How long a fill waits, which tests shorten.
 var (
 	poll = 50 * time.Millisecond
-	// settle is how long a field has to take what was typed, or the
-	// focus to move.
+	// settle is how long a field has to take what was put into it, or
+	// the focus to move.
 	settle = time.Second
 	// appWait is how long the app the user was in has to come back to
 	// the front, with its field.
@@ -127,7 +125,7 @@ var (
 	keyPause, slowPause = 4 * time.Millisecond, 30 * time.Millisecond
 )
 
-// Fill types the login into the app target, which comes back to the
+// Fill fills the login into the app target, which comes back to the
 // front as the window that asked for it hides, or into the page the
 // request opens first.
 func Fill(ctx context.Context, kb Keyboard, target macos.App, req Request) error {
@@ -152,17 +150,19 @@ func Fill(ctx context.Context, kb Keyboard, target macos.App, req Request) error
 		return ErrNoField
 	}
 	f := &filler{ctx: ctx, kb: kb, req: req, pid: target.PID, bundle: target.BundleID, browser: macos.IsBrowser(target.BundleID), origin: req.Origin}
+	fill := f.fillApp
 	if f.browser {
 		kb.Prepare(f.pid)
+		fill = f.fillPage
 	}
 	// Keys still held, as the Shift of Shift-Return, would change those
 	// typed: Shift-Tab goes back.
 	waitFor(ctx, releaseWait, func() bool { return !kb.ModifiersHeld() })
-	err := f.fill(req, wait)
+	err := fill(req, wait)
 	if errors.Is(err, ErrNotTaken) {
-		// A page that drew its form anew lost what was typed into the
-		// old one: once more, into the form it shows now.
-		err = f.fill(req, settle)
+		// A page that drew its form anew lost what was put into the old
+		// one: once more, into the form it shows now.
+		err = fill(req, settle)
 	}
 	return err
 }
@@ -179,105 +179,10 @@ type filler struct {
 	origin  string
 }
 
-func (f *filler) fill(req Request, wait time.Duration) error {
-	user, pass, err := f.find(wait)
-	if err != nil {
-		return err
-	}
-	if req.Username == "" {
-		user = nil
-	}
-	if user == nil && pass == nil {
-		return ErrNoField
-	}
-	if user != nil {
-		if err := f.typeInto(user, req.Username, false); err != nil {
-			return err
-		}
-		if f.kb.Frontmost().PID != f.pid {
-			return ErrNotInFront // as Tab is to go
-		}
-		pass = f.next(user, pass)
-	}
-	if pass == nil || req.Password == "" {
-		// A page that asks for the username alone, as the first of two.
-		return nil
-	}
-	return f.typeInto(pass, req.Password, true)
-}
-
-// find finds the fields to fill, waiting for a page to load and show
-// them on one of the login's websites.
-func (f *filler) find(wait time.Duration) (user, pass Field, err error) {
-	deadline := time.Now().Add(wait)
-	err = ErrNoField
-	for {
-		if loaded, known := f.kb.PageLoaded(f.pid); !f.browser || !known || loaded {
-			if user, pass = f.fields(); user != nil || pass != nil {
-				field := user
-				if field == nil {
-					field = pass
-				}
-				if !f.browser {
-					return user, pass, nil
-				}
-				// A page on its way to the login's, as through a redirect,
-				// may get there yet.
-				if _, err = f.onLogins(field); err == nil {
-					return user, pass, nil
-				}
-			}
-		}
-		if !time.Now().Before(deadline) || f.ctx.Err() != nil {
-			return nil, nil, err
-		}
-		sleep(f.ctx, 3*poll)
-	}
-}
-
-// fields finds the fields to fill: in an app, the field with the focus;
-// on a page, the login form's, around the field with the focus.
-func (f *filler) fields() (user, pass Field) {
-	at := f.kb.Focused(f.pid)
-	if !f.browser {
-		switch kind(at) {
-		case macos.FieldPassword:
-			return nil, at
-		case macos.FieldText:
-			return at, nil
-		}
-		return nil, nil
-	}
-	if at != nil && (!at.OnPage() || at.InFrame()) {
-		at = nil // the address field, say: the page's form is the one to fill
-	}
-	switch kind(at) {
-	case macos.FieldPassword:
-		return nil, at
-	case macos.FieldText:
-	default:
-		at = nil
-	}
-	// The fields of frames are no login's to fill, but tell why a page
-	// with its form in one is left as it is.
-	var page, framed []Field
-	for _, fl := range f.kb.TextFields(f.pid, at) {
-		if fl.InFrame() {
-			framed = append(framed, fl)
-		} else {
-			page = append(page, fl)
-		}
-	}
-	if user, pass = pick(page, at); user == nil && pass == nil {
-		return pick(framed, nil)
-	}
-	return user, pass
-}
-
 // onLogins checks that a field a browser shows is on a page of one of the
 // login's websites, not in a frame of it, and returns the page's address.
 func (f *filler) onLogins(field Field) (string, error) {
-	if field.InFrame() {
+	if field.Info().InFrame {
 		return "", ErrInFrame
 	}
 	u := field.PageURL()
@@ -328,75 +233,6 @@ func Origin(page string) string {
 	return strings.ToLower(u.Scheme + "://" + u.Host)
 }
 
-// next goes from the username's field to the password's, with Tab, as
-// the user would; where Tab goes elsewhere, as to a link, to the
-// password field of the form, which may show only once the username is
-// typed. It returns nil for a form that asks for the username alone.
-func (f *filler) next(user, pass Field) Field {
-	f.kb.PressKey(f.pid, macos.KeyTab)
-	waitFor(f.ctx, settle, func() bool {
-		at := f.kb.Focused(f.pid)
-		return at != nil && !at.Same(user)
-	})
-	if at := f.kb.Focused(f.pid); kind(at) == macos.FieldPassword && (!f.browser || at.OnPage() && !at.InFrame()) {
-		return at
-	}
-	if pass != nil || !f.browser {
-		return pass
-	}
-	waitFor(f.ctx, settle/2, func() bool {
-		_, pass = pick(f.kb.TextFields(f.pid, user), user)
-		return pass != nil
-	})
-	return pass
-}
-
-// typeInto types text over what the field holds, and waits for it to
-// hold it: a field that takes less, as one that drops keys, gets it once
-// more, typed slower.
-func (f *filler) typeInto(field Field, text string, secret bool) error {
-	for _, pause := range []time.Duration{keyPause, slowPause} {
-		if !f.focus(field) {
-			return ErrNotTaken
-		}
-		if err := f.commit(field); err != nil {
-			return err
-		}
-		f.selectAll(field, secret)
-		f.kb.TypeText(f.pid, text, pause)
-		if waitFor(f.ctx, settle, func() bool { return holds(field, text, secret) }) {
-			return nil
-		}
-	}
-	if v := strings.TrimSpace(field.Value()); !secret && utf8.RuneCountInString(v) >= utf8.RuneCountInString(text) {
-		return nil // a page that formats what it takes, as a phone number
-	}
-	return ErrNotTaken
-}
-
-// selectAll selects what the field holds, to type over it, and waits for
-// the selection to take: Command-A goes its own way to a page, as an
-// edit of the browser's, and a page busy with the keys before it would
-// take keys typed after it before it, and lose them to the selection.
-// A field that holds nothing needs none.
-func (f *filler) selectAll(field Field, secret bool) {
-	n, known := field.Length()
-	if !known {
-		v := field.Value()
-		n, known = utf8.RuneCountInString(v), v != "" || !secret
-	}
-	if known && n == 0 {
-		return
-	}
-	f.kb.SelectAll(f.pid)
-	if known {
-		waitFor(f.ctx, settle, func() bool {
-			s, ok := field.Selected()
-			return !ok || s == n
-		})
-	}
-}
-
 // focus gives the field the keyboard focus, and waits for it to have it.
 func (f *filler) focus(field Field) bool {
 	has := func() bool {
@@ -427,72 +263,19 @@ func holds(field Field, text string, secret bool) bool {
 	return n == utf8.RuneCountInString(text) || n == len(utf16.Encode([]rune(text)))
 }
 
-// pick picks the fields of a login form among the text fields of a page,
-// in the page's order: the first password field, and the text field
-// nearest before it for the username; of a page that asks for the
-// username alone, the text field that names itself so. Any other text
-// field is no username's, as a search field: a page without a login
-// form gets nothing. The field with the focus, at, is the username's
-// when it is the one before a password field, or named so.
-func pick(fields []Field, at Field) (user, pass Field) {
-	kinds := make([]macos.FieldKind, len(fields))
-	for i, fl := range fields {
-		kinds[i] = fl.Kind()
-	}
-	// before is the text field nearest before field i, or -1.
-	before := func(i int) int {
-		for j := i - 1; j >= 0; j-- {
-			if kinds[j] == macos.FieldText {
-				return j
-			}
-		}
-		return -1
-	}
-	if at != nil {
-		for i, fl := range fields {
-			if !fl.Same(at) {
-				continue
-			}
-			for j := i + 1; j < len(fields); j++ {
-				if kinds[j] == macos.FieldPassword {
-					if before(j) == i {
-						return at, fields[j]
-					}
-					break
-				}
-			}
-			if loginHint.MatchString(at.Hint()) {
-				return at, nil
-			}
-			break
-		}
-	}
-	for i, k := range kinds {
-		if k != macos.FieldPassword {
-			continue
-		}
-		if j := before(i); j >= 0 {
-			return fields[j], fields[i]
-		}
-		return nil, fields[i]
-	}
-	for i, fl := range fields {
-		if kinds[i] == macos.FieldText && loginHint.MatchString(fl.Hint()) {
-			return fl, nil
-		}
-	}
-	return nil, nil
-}
-
-// loginHint matches the names of username fields: their identifiers,
-// placeholders and labels.
-var loginHint = regexp.MustCompile(`user|e-?mail|login|account|identifier|phone`)
-
+// kind returns the kind of a field, as the keys know it: one to type a
+// password into, one to type text into, or none.
 func kind(f Field) macos.FieldKind {
 	if f == nil {
 		return macos.FieldNone
 	}
-	return f.Kind()
+	switch f.Info().Type {
+	case "password":
+		return macos.FieldPassword
+	case "text", "email", "tel":
+		return macos.FieldText
+	}
+	return macos.FieldNone
 }
 
 // waitForPage waits for a browser to come to the front showing a page of

@@ -15,7 +15,7 @@ func element(ref uintptr) *Element {
 	if ref == 0 {
 		return nil
 	}
-	e := &Element{ref}
+	e := &Element{ref: ref}
 	runtime.SetFinalizer(e, func(e *Element) { cfRelease(e.ref) })
 	return e
 }
@@ -99,30 +99,6 @@ func (e *Element) Selected() (n int, ok bool) {
 	return n, ok
 }
 
-// Hint returns what names e, in lower case: its identifier in the page,
-// its placeholder, title and description, as "login_field".
-func (e *Element) Hint() string {
-	if e == nil || load() != nil {
-		return ""
-	}
-	var parts []string
-	withPool(func() {
-		for _, a := range []string{"AXDOMIdentifier", "AXPlaceholderValue", "AXTitle", "AXDescription"} {
-			if s := stringAttr(e.ref, a); s != "" {
-				parts = append(parts, s)
-			}
-		}
-	})
-	return strings.ToLower(strings.Join(parts, " "))
-}
-
-// OnPage reports whether e is on a web page, rather than in the app's own
-// controls, as a browser's address field.
-func (e *Element) OnPage() bool { return e.pages() > 0 }
-
-// InFrame reports whether e is on a page inside another, in a frame.
-func (e *Element) InFrame() bool { return e.pages() > 1 }
-
 // pages counts the web pages e is on: the page of a frame, and the
 // page the frame is on.
 func (e *Element) pages() int {
@@ -175,6 +151,19 @@ func (e *Element) PageURL() string {
 	return u
 }
 
+// SetValue puts text into e at once, as accessibility sets a value,
+// reporting whether the app took the request.
+func (e *Element) SetValue(text string) bool {
+	if e == nil || load() != nil {
+		return false
+	}
+	ok := false
+	withPool(func() {
+		ok = axSetAttributeValue(e.ref, uintptr(nsString("AXValue")), uintptr(nsString(text))) == 0
+	})
+	return ok
+}
+
 // Focus gives e the keyboard focus, reporting whether the app took the
 // request.
 func (e *Element) Focus() bool {
@@ -187,41 +176,6 @@ func (e *Element) Focus() bool {
 		ok = axSetAttributeValue(e.ref, uintptr(nsString("AXFocused")), uintptr(yes)) == 0
 	})
 	return ok
-}
-
-// TextFields returns the text and password fields of the page near is
-// on, or without it, of the page the app's focused window shows, in the
-// page's order: those too small to see are left out.
-func TextFields(pid int, near *Element) []*Element {
-	if load() != nil || pid <= 0 {
-		return nil
-	}
-	var out []*Element
-	withPool(func() {
-		web := uintptr(0)
-		if near != nil {
-			web = pageOf(near.ref)
-		}
-		if web == 0 {
-			web = shownPage(pid)
-		}
-		if web == 0 {
-			return
-		}
-		defer cfRelease(web)
-		refs, ok := searchTextFields(web)
-		if !ok {
-			refs = walkTextFields(web)
-		}
-		for _, r := range refs {
-			if seen(r) {
-				out = append(out, element(r))
-			} else {
-				cfRelease(r)
-			}
-		}
-	})
-	return out
 }
 
 // PageLoaded reports whether the page the app's focused window shows has
@@ -301,9 +255,31 @@ func pageOf(el uintptr) uintptr {
 	return 0
 }
 
+// topPageOf returns the page an element is on, retained, or 0: for one in
+// a frame, the page the frame is on, as far as the browser's tab.
+func topPageOf(el uintptr) uintptr {
+	top := uintptr(0)
+	cur := cfRetain(el)
+	for i := 0; cur != 0 && i < 64; i++ {
+		if stringAttr(cur, "AXRole") == "AXWebArea" {
+			if top != 0 {
+				cfRelease(top)
+			}
+			top = cfRetain(cur)
+		}
+		parent := copyAttr(cur, "AXParent")
+		cfRelease(cur)
+		cur = parent
+	}
+	if cur != 0 {
+		cfRelease(cur)
+	}
+	return top
+}
+
 // shownPage returns the web page the app's focused window shows,
-// retained, or 0: the page of the element with the focus, else the
-// first a few levels into the window.
+// retained, or 0: the page of the element with the focus, that its frame
+// is on for one in a frame, else the first a few levels into the window.
 func shownPage(pid int) uintptr {
 	app := axCreateApplication(int32(pid))
 	if app == 0 {
@@ -311,7 +287,7 @@ func shownPage(pid int) uintptr {
 	}
 	defer cfRelease(app)
 	if el := copyAttr(app, "AXFocusedUIElement"); el != 0 {
-		web := pageOf(el)
+		web := topPageOf(el)
 		cfRelease(el)
 		if web != 0 {
 			return web
@@ -339,59 +315,270 @@ func shownPage(pid int) uintptr {
 	return 0
 }
 
-// searchTextFields asks a page for its text fields, as VoiceOver's
-// rotor does, in the page's order; ok is false for an app that doesn't
-// take the search.
-func searchTextFields(web uintptr) (fields []uintptr, ok bool) {
-	pred := class("NSMutableDictionary").Send(sel("dictionary"))
-	set := func(key string, v objc.ID) { pred.Send(sel("setObject:forKey:"), v, nsString(key)) }
-	set("AXSearchKey", nsString("AXTextFieldSearchKey"))
-	set("AXDirection", nsString("AXDirectionNext"))
-	set("AXResultsLimit", class("NSNumber").Send(sel("numberWithInt:"), int32(200)))
-	set("AXVisibleOnly", class("NSNumber").Send(sel("numberWithBool:"), false))
-	set("AXImmediateDescendantsOnly", class("NSNumber").Send(sel("numberWithBool:"), false))
-	var out uintptr
-	if axCopyParameterizedValue(web, uintptr(nsString("AXUIElementsForSearchPredicate")), uintptr(pred), &out) != 0 || out == 0 {
-		return nil, false
+// Fields returns the fields of the page near is on, or without it, of the
+// page the app's focused window shows, in the page's order, with what
+// each tells (Info): its text fields, menus and boxes, and those of its
+// frames.
+func Fields(pid int, near *Element) []*Element {
+	if load() != nil || pid <= 0 {
+		return nil
 	}
-	defer cfRelease(out)
-	return retainedItems(out), true
-}
-
-// walkTextFields finds the text fields of a page through its elements,
-// in the page's order, as far as the first few thousand.
-func walkTextFields(web uintptr) []uintptr {
-	var out []uintptr
-	n := 0
-	var walk func(el uintptr)
-	walk = func(el uintptr) {
-		if n++; n > 5000 {
+	var out []*Element
+	withPool(func() {
+		app := axCreateApplication(int32(pid))
+		if app == 0 {
 			return
 		}
-		if r := stringAttr(el, "AXRole"); r == "AXTextField" || r == "AXComboBox" {
-			out = append(out, cfRetain(el))
+		defer cfRelease(app)
+		web := uintptr(0)
+		if near != nil {
+			web = topPageOf(near.ref)
+		}
+		if web == 0 {
+			web = shownPage(pid)
+		}
+		if web == 0 {
 			return
 		}
-		for _, c := range children(el) {
-			walk(c)
-			cfRelease(c)
+		defer cfRelease(web)
+		page := frameOf(web)
+		n := 0
+		var walk func(el uintptr, framed bool)
+		walk = func(el uintptr, framed bool) {
+			if n++; n > 5000 {
+				return
+			}
+			if typ := fieldType(el); typ != "" {
+				e := element(cfRetain(el))
+				info := infoOf(el, app, page)
+				info.OnPage, info.InFrame = true, framed
+				e.info = &info
+				out = append(out, e)
+				return
+			}
+			// A page within the page is a frame's.
+			framed = framed || el != web && stringAttr(el, "AXRole") == "AXWebArea"
+			for _, c := range children(el) {
+				walk(c, framed)
+				cfRelease(c)
+			}
 		}
-	}
-	walk(web)
+		walk(web, false)
+	})
 	return out
 }
 
-// seen reports whether an element is large enough to see: a page keeps
-// fields of no size for scripts, as a password field before its turn.
-func seen(el uintptr) bool {
-	v := copyAttr(el, "AXSize")
-	if v == 0 {
+// Info returns what e tells of itself as a field, as Fields found it, or
+// now.
+func (e *Element) Info() FieldInfo {
+	if e == nil || load() != nil {
+		return FieldInfo{}
+	}
+	if e.info != nil {
+		return *e.info
+	}
+	var info FieldInfo
+	withPool(func() {
+		app := axCreateApplication(int32(e.pid()))
+		if app != 0 {
+			defer cfRelease(app)
+		}
+		var page rect
+		if web := pageOf(e.ref); web != 0 {
+			page = frameOf(web)
+			cfRelease(web)
+		}
+		info = infoOf(e.ref, app, page)
+	})
+	n := e.pages()
+	info.OnPage, info.InFrame = n > 0, n > 1
+	return info
+}
+
+// pid returns the process of the app e is of.
+func (e *Element) pid() int {
+	var pid int32
+	axGetPid(e.ref, &pid)
+	return int(pid)
+}
+
+type rect struct{ X, Y, W, H float64 }
+
+func frameOf(el uintptr) rect {
+	var r rect
+	if v := copyAttr(el, "AXPosition"); v != 0 {
+		var p struct{ X, Y float64 }
+		if axValueGetValue(v, 1, unsafe.Pointer(&p)) { // kAXValueCGPointType
+			r.X, r.Y = p.X, p.Y
+		}
+		cfRelease(v)
+	}
+	if v := copyAttr(el, "AXSize"); v != 0 {
+		var s struct{ W, H float64 }
+		if axValueGetValue(v, 2, unsafe.Pointer(&s)) { // kAXValueCGSizeType
+			r.W, r.H = s.W, s.H
+		}
+		cfRelease(v)
+	}
+	return r
+}
+
+// infoOf reads what a field tells, on the page of frame page, in the app
+// of app.
+func infoOf(el, app uintptr, page rect) FieldInfo {
+	info := FieldInfo{
+		Type:        fieldType(el),
+		ID:          stringAttr(el, "AXDOMIdentifier"),
+		Classes:     strings.Join(stringsAttr(el, "AXDOMClassList"), " "),
+		Label:       stringAttr(el, "AXTitle"),
+		Placeholder: stringAttr(el, "AXPlaceholderValue"),
+		AriaLabel:   stringAttr(el, "AXDescription"),
+		Help:        stringAttr(el, "AXHelp"),
+		Value:       stringAttr(el, "AXValue"),
+		Enabled:     true,
+	}
+	if v := copyAttr(el, "AXEnabled"); v != 0 {
+		info.Enabled = objc.Send[bool](objc.ID(v), sel("boolValue"))
+		cfRelease(v)
+	}
+	axIsAttributeSettable(el, uintptr(nsString("AXValue")), &info.Settable)
+	info.Form, info.FormHint = formOf(el)
+	info.Viewable = viewable(el, app, page)
+	return info
+}
+
+// fieldType returns the type of a field, as an input's, or "" for an
+// element that is no field.
+func fieldType(el uintptr) string {
+	role := stringAttr(el, "AXRole")
+	switch role {
+	case "AXTextField", "AXComboBox":
+		switch stringAttr(el, "AXSubrole") {
+		case "AXSecureTextField":
+			return "password"
+		case "AXSearchField":
+			return "search"
+		}
+		// The kind of input shows in how its role is described: "email",
+		// "telephone", "secure text field".
+		switch d := strings.ToLower(stringAttr(el, "AXRoleDescription")); {
+		case strings.Contains(d, "email"):
+			return "email"
+		case strings.Contains(d, "phone"):
+			return "tel"
+		case strings.Contains(d, "url"), strings.Contains(d, "web address"):
+			return "url"
+		}
+		return "text"
+	case "AXTextArea":
+		return "textarea"
+	case "AXPopUpButton":
+		return "select"
+	case "AXIncrementor":
+		return "number"
+	case "AXDateField", "AXTimeField":
+		return "date"
+	case "AXCheckBox":
+		return "checkbox"
+	case "AXRadioButton":
+		return "radio"
+	}
+	return ""
+}
+
+// formOf returns the form el is in, as its hash, and the form's
+// identifier and classes; 0 outside any.
+func formOf(el uintptr) (uint64, string) {
+	cur := copyAttr(el, "AXParent")
+	for i := 0; cur != 0 && i < 32; i++ {
+		role := stringAttr(cur, "AXRole")
+		if role == "AXWebArea" {
+			break
+		}
+		if role == "AXGroup" && (stringAttr(cur, "AXRoleDescription") == "form" || stringAttr(cur, "AXSubrole") == "AXLandmarkForm") {
+			hash := cfHash(cur)
+			hint := strings.TrimSpace(stringAttr(cur, "AXDOMIdentifier") + " " + strings.Join(stringsAttr(cur, "AXDOMClassList"), " "))
+			cfRelease(cur)
+			return hash, hint
+		}
+		parent := copyAttr(cur, "AXParent")
+		cfRelease(cur)
+		cur = parent
+	}
+	if cur != 0 {
+		cfRelease(cur)
+	}
+	return 0, ""
+}
+
+// viewable reports whether the user can see a field, as Bitwarden has it:
+// at least 10 points square; its middle on the page, beside none of it,
+// as a field put out of sight at left: -9999px, nor far above it; and on
+// screen, nothing over its middle but itself or its label, where the app
+// tells what is. A page scrolled away from it keeps it viewable.
+func viewable(el, app uintptr, page rect) bool {
+	r := frameOf(el)
+	if r.W < 10 || r.H < 10 {
+		return false
+	}
+	if page.W == 0 || app == 0 {
 		return true
+	}
+	x, y := r.X+r.W/2, r.Y+r.H/2
+	if x < page.X || x > page.X+page.W || y < page.Y-page.H {
+		return false
+	}
+	if y > page.Y+page.H {
+		return true // below, where the page scrolls to
+	}
+	var hit uintptr
+	if axCopyElementAtPosition(app, float32(x), float32(y), &hit) != 0 || hit == 0 {
+		return true
+	}
+	defer cfRelease(hit)
+	// Chromium finds what is at a point in the background, and tells the
+	// page itself till it has: that tells nothing.
+	if stringAttr(hit, "AXRole") == "AXWebArea" {
+		return true
+	}
+	label := copyAttr(el, "AXTitleUIElement")
+	if label != 0 {
+		defer cfRelease(label)
+	}
+	// What is at its middle may be part of it, as its text, or of its
+	// label.
+	cur := cfRetain(hit)
+	defer func() {
+		if cur != 0 {
+			cfRelease(cur)
+		}
+	}()
+	for i := 0; cur != 0 && i < 4; i++ {
+		if cfEqual(cur, el) || label != 0 && cfEqual(cur, label) {
+			return true
+		}
+		parent := copyAttr(cur, "AXParent")
+		cfRelease(cur)
+		cur = parent
+	}
+	return false
+}
+
+// stringsAttr returns an attribute of an element that is a list of text.
+func stringsAttr(el uintptr, name string) []string {
+	v := copyAttr(el, name)
+	if v == 0 {
+		return nil
 	}
 	defer cfRelease(v)
-	var size struct{ W, H float64 }
-	if !axValueGetValue(v, 2, unsafe.Pointer(&size)) { // kAXValueCGSizeType
-		return true
+	if !objc.Send[bool](objc.ID(v), sel("isKindOfClass:"), class("NSArray")) {
+		return nil
 	}
-	return size.W >= 2 && size.H >= 2
+	var out []string
+	for i := uint(0); i < objc.Send[uint](objc.ID(v), sel("count")); i++ {
+		if it := objc.ID(v).Send(sel("objectAtIndex:"), i); objc.Send[bool](it, sel("isKindOfClass:"), class("NSString")) {
+			out = append(out, goString(it))
+		}
+	}
+	return out
 }
