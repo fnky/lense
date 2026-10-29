@@ -132,6 +132,8 @@ managers, and cleared after 90 seconds unless you copied something else.
 |---|---|
 | `=favorite` | favorites |
 | `=tag:Work` | items in the folder or collection Work |
+| `=folder:Work` | items in the folder Work |
+| `=collection:Engineering` | items in the collection Engineering |
 | `=untagged` | items in no folder or collection |
 | `=category:card` | logins, cards, notes, identities or SSH keys |
 | `=vault:"My Vault"` | items of a vault: My Vault or an organization's |

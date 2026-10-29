@@ -4,6 +4,8 @@
 //	=untagged          items in no folder and no collection
 //	=favorite          favorites
 //	=tag:<name>        items in a folder or collection of that name
+//	=folder:<name>     items in a folder of that name
+//	=collection:<name> items in a collection of that name
 //	=category:<kind>   logins, cards, notes, identities or SSH keys
 //	=vault:<name>      items of an organization, or of "My Vault"
 //	=passkey           logins with a passkey
@@ -15,6 +17,7 @@ package search
 import (
 	"net"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -33,6 +36,8 @@ const (
 	Vault
 	Passkey
 	Location
+	Folder
+	Collection
 )
 
 // Filter is a filter of a query.
@@ -60,7 +65,9 @@ var keywords = []struct {
 }{
 	{Untagged, []string{"untagged"}, false},
 	{Favorite, []string{"favorite", "favorites", "favourite", "favourites", "fav"}, false},
-	{Tag, []string{"tag", "folder", "collection"}, true},
+	{Tag, []string{"tag"}, true},
+	{Folder, []string{"folder"}, true},
+	{Collection, []string{"collection"}, true},
 	{Category, []string{"category", "type"}, true},
 	{Vault, []string{"vault"}, true},
 	{Passkey, []string{"passkey", "passkeys"}, false},
@@ -137,39 +144,49 @@ func tokens(s string) []string {
 
 // Index is what a search looks items up with.
 type Index struct {
-	v       *bw.Vault
-	tags    map[string][]string // item ID: its folder's and collections' names, in lower case
-	allTags []string
+	v *bw.Vault
+	// tags are, for =tag:, =folder: and =collection:, the names of each
+	// item's folder and collections, in lower case, by item ID; allTags
+	// are all the names.
+	tags    map[Kind]map[string][]string
+	allTags map[Kind][]string
 	orgs    map[string]string // organization ID: name in lower case
 }
 
 // NewIndex prepares the vault for searches.
 func NewIndex(v *bw.Vault) *Index {
-	ix := &Index{v: v, tags: map[string][]string{}, orgs: map[string]string{}}
+	ix := &Index{
+		v:       v,
+		tags:    map[Kind]map[string][]string{Tag: {}, Folder: {}, Collection: {}},
+		allTags: map[Kind][]string{},
+		orgs:    map[string]string{},
+	}
 	folders := map[string]string{}
 	for _, f := range v.Folders {
 		folders[f.ID] = strings.ToLower(f.Name)
-		ix.allTags = append(ix.allTags, strings.ToLower(f.Name))
+		ix.allTags[Folder] = append(ix.allTags[Folder], strings.ToLower(f.Name))
 	}
 	cols := map[string]string{}
 	for _, c := range v.Collections {
 		cols[c.ID] = strings.ToLower(c.Name)
-		ix.allTags = append(ix.allTags, strings.ToLower(c.Name))
+		ix.allTags[Collection] = append(ix.allTags[Collection], strings.ToLower(c.Name))
 	}
+	ix.allTags[Tag] = append(slices.Clone(ix.allTags[Folder]), ix.allTags[Collection]...)
 	for _, o := range v.Organizations {
 		ix.orgs[o.ID] = strings.ToLower(o.Name)
 	}
 	for _, it := range v.Items {
-		var t []string
+		var f, c []string
 		if n, ok := folders[it.FolderID]; ok {
-			t = append(t, n)
+			f = append(f, n)
 		}
-		for _, c := range it.CollectionIDs {
-			if n, ok := cols[c]; ok {
-				t = append(t, n)
+		for _, id := range it.CollectionIDs {
+			if n, ok := cols[id]; ok {
+				c = append(c, n)
 			}
 		}
-		ix.tags[it.ID] = t
+		ix.tags[Folder][it.ID], ix.tags[Collection][it.ID] = f, c
+		ix.tags[Tag][it.ID] = append(slices.Clone(f), c...)
 	}
 	return ix
 }
@@ -215,16 +232,16 @@ func (ix *Index) Run(q Query, boost func(*bw.Item) int) []*bw.Item {
 	return out
 }
 
-// exactNames reports, for the tag and vault filters of q, whether a folder,
-// collection or organization has exactly that name: then the filter takes
-// that one alone, else those whose names start with it, as one being
-// typed.
+// exactNames reports, for the tag, folder, collection and vault filters of
+// q, whether a folder, collection or organization has exactly that name:
+// then the filter takes that one alone, else those whose names start with
+// it, as one being typed.
 func (ix *Index) exactNames(q Query) map[Filter]bool {
 	out := map[Filter]bool{}
 	for _, f := range q.Filters {
 		switch f.Kind {
-		case Tag:
-			for _, t := range ix.allTags {
+		case Tag, Folder, Collection:
+			for _, t := range ix.allTags[f.Kind] {
 				if t == f.Value {
 					out[f] = true
 				}
@@ -281,13 +298,13 @@ func (ix *Index) filter(it *bw.Item, f Filter, exact bool) bool {
 	}
 	switch f.Kind {
 	case Untagged:
-		return len(ix.tags[it.ID]) == 0
+		return len(ix.tags[Tag][it.ID]) == 0
 	case Favorite:
 		return it.Favorite
 	case Passkey:
 		return it.Login != nil && len(it.Login.Passkeys) > 0
-	case Tag:
-		for _, t := range ix.tags[it.ID] {
+	case Tag, Folder, Collection:
+		for _, t := range ix.tags[f.Kind][it.ID] {
 			if named(t) {
 				return true
 			}
@@ -364,7 +381,7 @@ func (ix *Index) term(it *bw.Item, t string) int {
 		try(id.Email, 30, 20, 10)
 		try(id.Company, 20, 15, 10)
 	}
-	for _, tag := range ix.tags[it.ID] {
+	for _, tag := range ix.tags[Tag][it.ID] {
 		try(tag, 15, 10, 5)
 	}
 	return best

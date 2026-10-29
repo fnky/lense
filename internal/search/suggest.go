@@ -37,6 +37,8 @@ func (ix *Index) Complete(s string) []Completion {
 		for _, k := range []struct{ name, detail string }{
 			{"favorite", "Favorites"},
 			{"tag:", "Items in a folder or collection"},
+			{"folder:", "Items in a folder"},
+			{"collection:", "Items in a collection"},
 			{"category:", "Logins, cards, notes, identities or SSH keys"},
 			{"vault:", "Items of a vault"},
 			{"location:", "Logins for a website"},
@@ -72,14 +74,21 @@ func (ix *Index) Complete(s string) []Completion {
 	}
 	switch name {
 	case "tag", "folder", "collection":
-		var names []string
+		var folders, cols []string
 		for _, f := range ix.v.Folders {
-			names = append(names, f.Name)
+			folders = append(folders, f.Name)
 		}
 		for _, c := range ix.v.Collections {
-			names = append(names, c.Name)
+			cols = append(cols, c.Name)
 		}
-		values(name, "Folder or collection", names)
+		switch name {
+		case "folder":
+			values(name, "Folder", folders)
+		case "collection":
+			values(name, "Collection", cols)
+		default:
+			values(name, "Folder or collection", append(folders, cols...))
+		}
 	case "category", "type":
 		values(name, "Category", []string{"Login", "Card", "Note", "Identity", "SSH"})
 	case "vault":

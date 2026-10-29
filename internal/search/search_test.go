@@ -56,6 +56,10 @@ func TestRun(t *testing.T) {
 		{"=untagged =category:login", []string{"Google", "Router"}},
 		{"=tag:work", []string{"GitHub"}},
 		{"=tag:eng", []string{"AWS Console", "Deploy key"}},
+		{"=folder:work", []string{"GitHub"}},
+		{"=folder:eng", nil},
+		{"=collection:eng", []string{"AWS Console", "Deploy key"}},
+		{"=collection:work", nil},
 		{"=category:card", []string{"Visa"}},
 		{"=category:ssh", []string{"Deploy key"}},
 		{"=category:note", []string{"Wi-Fi"}},
@@ -93,11 +97,26 @@ func TestComplete(t *testing.T) {
 		}
 		return out
 	}
+	if got := labels("="); !slices.Equal(got, []string{"=favorite", "=tag:", "=folder:", "=collection:", "=category:", "=vault:", "=location:", "=passkey", "=untagged"}) {
+		t.Errorf("=: %q", got)
+	}
 	if got := labels("git =ta"); !slices.Equal(got, []string{"=tag:"}) {
 		t.Errorf("=ta: %q", got)
 	}
+	if got := labels("=fo"); !slices.Equal(got, []string{"=folder:"}) {
+		t.Errorf("=fo: %q", got)
+	}
+	if got := labels("=col"); !slices.Equal(got, []string{"=collection:"}) {
+		t.Errorf("=col: %q", got)
+	}
 	if got := labels("=tag:"); !slices.Equal(got, []string{"=tag:Personal", "=tag:Work", "=tag:Engineering"}) {
 		t.Errorf("=tag: %q", got)
+	}
+	if got := labels("=folder:"); !slices.Equal(got, []string{"=folder:Personal", "=folder:Work"}) {
+		t.Errorf("=folder: %q", got)
+	}
+	if got := labels("=collection:"); !slices.Equal(got, []string{"=collection:Engineering"}) {
+		t.Errorf("=collection: %q", got)
 	}
 	if got := labels("=vault:a"); !slices.Equal(got, []string{"=vault:Acme Inc."}) {
 		t.Errorf("=vault:a %q", got)
