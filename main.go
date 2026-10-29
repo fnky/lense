@@ -128,6 +128,8 @@ func (s *shell) ready() {
 			s.footer.Invalidate()
 		}
 	}
+	// After the frame that asked for it, at the height asked for last.
+	a.resize = func() { go mygo.RunOnMain(func() { s.resize(a.height) }) }
 	s.content = ui.View(a.view)
 
 	s.tray, err = mygo.NewTray(mygo.TrayOptions{
@@ -279,10 +281,11 @@ func (s *shell) open(ask bool) {
 	d := mygo.Screen.DisplayNearestPoint(mygo.Screen.CursorScreenPoint())
 	work := rect{d.WorkArea.X, d.WorkArea.Y, d.WorkArea.Width, d.WorkArea.Height}
 	x, y := a.cfg.Window.place(d.ID, work, windowWidth, windowHeight)
+	a.height = a.heightNow()
 	w := mygo.NewFlyout(mygo.FlyoutOptions{
 		Tray:      s.tray,
 		Width:     windowWidth,
-		Height:    windowHeight,
+		Height:    a.height,
 		Focusable: true,
 		Shadow:    true,
 		Hidden:    true,
@@ -322,6 +325,20 @@ func (s *shell) open(ask bool) {
 	}
 	a.shown(ask)
 	s.redraw()
+}
+
+// resize gives the window the height h, its top where it is: the search
+// alone, collapsed, or all of Quick Access. A flyout resized would go back
+// under its icon, where the user may not have it: it keeps its bounds.
+func (s *shell) resize(h int) {
+	if s.win == nil {
+		return
+	}
+	b := s.win.Bounds()
+	if b.Height != h {
+		b.Height = h
+		s.win.SetBounds(b)
+	}
 }
 
 // addBar lays AppKit's material over the bottom of w, and the window that

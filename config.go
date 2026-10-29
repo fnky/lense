@@ -41,6 +41,11 @@ type config struct {
 	// Material is what the window shows behind its content: "solid", or a
 	// material of macOS, which blurs what is behind the window.
 	Material string `json:"material,omitempty"`
+	// WindowMode is how Quick Access shows with nothing searched: "" lists
+	// the items under the search, windowCompact shows the search alone,
+	// or with CompactFavorites, the favorites under it, where there are.
+	WindowMode       string `json:"windowMode,omitempty"`
+	CompactFavorites bool   `json:"compactFavorites"`
 	// Tooltips name the buttons of an icon as the pointer rests on them.
 	Tooltips bool `json:"tooltips"`
 	// AllowScreenCapture lets screenshots and screen recordings show the
@@ -76,6 +81,8 @@ func defaultConfig() config {
 		CopyTOTP:       true,
 		Material:       "popover",
 		Tooltips:       true,
+
+		CompactFavorites: true,
 	}
 }
 
@@ -88,6 +95,15 @@ var materials = []struct{ id, label string }{
 	{"hud", "HUD"},
 	{"sidebar", "Sidebar"},
 	{"under-window", "Under Window"},
+}
+
+// windowCompact is the window mode that shows the search alone.
+const windowCompact = "compact"
+
+// windowModes are the window modes, with their names in the settings.
+var windowModes = []struct{ id, label string }{
+	{"", "Default"},
+	{windowCompact, "Compact"},
 }
 
 // translucent reports whether the window shows a material.

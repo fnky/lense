@@ -278,6 +278,10 @@ type app struct {
 	nativeBar, barShown bool
 	showBar             func(show bool)
 	redrawBar           func()
+	// height is the height of the window as Quick Access shows now, its
+	// search alone or all of it, which resize has the shell give it.
+	height int
+	resize func()
 
 	// The rubber bands of the scroll views: the items', which listOff
 	// moves the rows by in this frame, the details', of the details in
@@ -333,6 +337,7 @@ func newApp(cfg config, desk desktop, sys system) *app {
 		refocus:       func() {},
 		applyMaterial: func() {},
 		applyCapture:  func() {},
+		resize:        func() {},
 		setShortcut:   func(string) error { return nil },
 		exit:          func() {},
 		sel:           -1,
@@ -1074,7 +1079,6 @@ func (a *app) rebuild(keep bool) {
 		}
 	}
 	if q.Empty() {
-		section("Suggestions", suggestions, 6)
 		var favs, recent []*bw.Item
 		for _, it := range a.vault.Items {
 			if it.Favorite {
@@ -1086,9 +1090,17 @@ func (a *app) rebuild(keep bool) {
 				recent = append(recent, it)
 			}
 		}
-		section("Favorites", favs, 0)
-		section("Recently Used", recent, 6)
-		section("All Items", a.vault.Items, 0)
+		if a.cfg.WindowMode == windowCompact {
+			// The search alone, or the favorites under it.
+			if a.cfg.CompactFavorites {
+				section("Favorites", favs, 0)
+			}
+		} else {
+			section("Suggestions", suggestions, 6)
+			section("Favorites", favs, 0)
+			section("Recently Used", recent, 6)
+			section("All Items", a.vault.Items, 0)
+		}
 	} else {
 		title := ""
 		if len(a.rows) > 0 {

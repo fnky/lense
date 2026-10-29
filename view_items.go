@@ -26,6 +26,9 @@ const footerHeight = 36
 func (a *app) itemsView(c *ui.Context, k ink) {
 	ui.Column(c).Fill().Children(func() {
 		a.header(c, k)
+		if a.collapsed() {
+			return
+		}
 		// The list and the details go down to the window's bottom, and
 		// scroll under the footer, which floats over them.
 		a.listOff = a.listBand.offset(c)
@@ -60,10 +63,34 @@ func (a *app) itemsView(c *ui.Context, k ink) {
 	}
 }
 
+// headerHeight is the height of the search, and of the window that shows
+// it alone (collapsed).
+const headerHeight = 56
+
+// collapsed reports whether Quick Access shows its search alone, as the
+// compact window mode does: nothing searched, and nothing listed without,
+// as favorites, nor over the items.
+func (a *app) collapsed() bool {
+	return a.cfg.WindowMode == windowCompact && a.inItems() && a.query == "" && len(a.rows) == 0 &&
+		a.mode == modeResults && a.prob == nil && a.large == nil && a.confirm == nil
+}
+
+// heightNow is the height of the window as Quick Access shows now.
+func (a *app) heightNow() int {
+	if a.collapsed() {
+		return headerHeight
+	}
+	return windowHeight
+}
+
 // header is the search, and the vault it searches.
 func (a *app) header(c *ui.Context, k ink) {
-	a.dragHandle(ui.Row(c).Height(56).Padding(0, 10, 0, 18).Gap(12).AlignItems(ui.Center).
-		BorderWidth(0, 0, 1, 0).BorderColor(k.line)).Children(func() {
+	line := float32(1)
+	if a.collapsed() {
+		line = 0 // the window's bottom
+	}
+	a.dragHandle(ui.Row(c).Height(headerHeight).Padding(0, 10, 0, 18).Gap(12).AlignItems(ui.Center).
+		BorderWidth(0, 0, line, 0).BorderColor(k.line)).Children(func() {
 		ui.Icon(c, iconSearch).FontSize(19).TextColor(k.muted)
 		in := ui.TextInputBase(c.Key("search"), &a.query).Grow(1).Shrink(1).FontSize(19).
 			Placeholder("Search in " + a.vaultName()).Label("Search").Bind(&a.search)
@@ -470,7 +497,7 @@ func (a *app) footerView(c *ui.Context) {
 // footerShows reports whether Quick Access shows its footer: over its
 // items, without Large Type or the master password asked for over them.
 func (a *app) footerShows() bool {
-	return a.configured() && a.page == pageItems && a.unlocked() && a.large == nil && a.confirm == nil
+	return a.configured() && a.page == pageItems && a.unlocked() && a.large == nil && a.confirm == nil && !a.collapsed()
 }
 
 // footerBar fills bar with what the keys do where they act, or the message

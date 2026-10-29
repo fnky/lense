@@ -75,7 +75,8 @@ Opening the app shows Quick Access, whether it was running or not; it waits
 with its buttons off while it reads the desktop app's data. Locked, it asks
 for Touch ID as you show it with its shortcut or the menu bar, not as the app
 opens. Settings › General launches it at login, where it waits in the menu
-bar.
+bar. In the compact window mode of Settings › Appearance, Quick Access shows
+the search alone till you type, or your favorites under it, if you choose.
 
 The keys act where Quick Access is: on the search results, on the fields
 of the item chosen, or on the vaults. Change any of them in Settings, the

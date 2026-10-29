@@ -71,6 +71,30 @@ func (a *app) settingsView(c *ui.Context, k ink) {
 					})
 			})
 			section(c, k, "Appearance", func() {
+				mode := windowModes[0].label
+				var modes []string
+				for _, m := range windowModes {
+					modes = append(modes, m.label)
+					if m.id == a.cfg.WindowMode {
+						mode = m.label
+					}
+				}
+				settingRow(c, k, "Window mode", "Default lists your items under the search while it's empty; Compact shows the search alone till you type.", func() {
+					picker(c.Key("window-mode"), k, &mode, modes).Width(170).OnChange(func() {
+						for _, m := range windowModes {
+							if m.label == mode {
+								a.cfg.WindowMode = m.id
+							}
+						}
+						a.changed()
+						a.rebuild(true)
+					})
+				})
+				switchRow(c.Key("compact-favorites"), k, "Show favorites in compact mode", "Under the search while it's empty, where you have some.",
+					&a.cfg.CompactFavorites, func() {
+						a.changed()
+						a.rebuild(true)
+					})
 				var labels []string
 				sel := materials[0].label
 				for _, m := range materials {

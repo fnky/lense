@@ -139,6 +139,10 @@ func (a *app) view(c *ui.Context) {
 		}
 	})
 	a.syncBar()
+	if h := a.heightNow(); h != a.height {
+		a.height = h
+		a.resize()
+	}
 	a.secureField("panel", a.pwField.Focused(c) || a.confirmH.Focused(c))
 }
 

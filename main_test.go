@@ -2148,3 +2148,84 @@ func TestScreenCaptureIsAllowedInTheSettings(t *testing.T) {
 		t.Fatalf("allowed %v, applied %d times", h.a.cfg.AllowScreenCapture, applied)
 	}
 }
+
+// The compact window shows the search alone while nothing is searched,
+// and all of Quick Access as something is, or as something shows over it.
+func TestCompactWindow(t *testing.T) {
+	h := newHarness(t, nil, true)
+	resized := 0
+	h.a.resize = func() { resized++ }
+	h.unlock()
+	h.a.cfg.WindowMode, h.a.cfg.CompactFavorites = windowCompact, false
+	h.a.rebuild(false)
+	h.settle()
+	if !h.a.collapsed() || h.a.height != headerHeight || resized != 1 {
+		t.Fatalf("collapsed %v, height %d, resized %d times", h.a.collapsed(), h.a.height, resized)
+	}
+	for _, s := range []string{"ALL ITEMS", "RECENTLY USED", "FAVORITES", "GitHub", "No items in All Vaults", "Items"} {
+		if h.tt.HasText(s) {
+			t.Errorf("%q shows over the search alone", s)
+		}
+	}
+	snapshot(t, h.tt, "compact")
+
+	// Typing shows the items found, which Escape clears.
+	h.tt.Type("git")
+	h.settle()
+	if h.a.collapsed() || h.a.height != windowHeight {
+		t.Fatalf("searching: height %d", h.a.height)
+	}
+	h.has("GitHub")
+	h.key(0, ui.KeyEscape)
+	if h.a.query != "" || h.a.height != headerHeight {
+		t.Fatalf("cleared: query %q, height %d", h.a.query, h.a.height)
+	}
+	// The vault selector shows over the items.
+	h.key(ui.Cmd, ui.KeyK)
+	if h.a.mode != modeVaults || h.a.height != windowHeight {
+		t.Fatalf("vaults: mode %v, height %d", h.a.mode, h.a.height)
+	}
+	h.key(0, ui.KeyEscape)
+	if h.a.height != headerHeight {
+		t.Fatalf("vaults closed: height %d", h.a.height)
+	}
+
+	// The favorites show under it, as the settings say, and alone.
+	h.key(ui.Cmd, ui.KeyComma)
+	h.tt.SetSize(windowWidth, 2400)
+	h.settle()
+	if h.a.height != windowHeight {
+		t.Fatalf("settings: height %d", h.a.height)
+	}
+	h.has("Window mode", "Compact", "Show favorites in compact mode")
+	h.flip("Show favorites in compact mode")
+	if !h.a.cfg.CompactFavorites {
+		t.Fatal("favorites off")
+	}
+	h.key(0, ui.KeyEscape)
+	h.tt.SetSize(windowWidth, windowHeight)
+	h.settle()
+	if h.a.collapsed() || h.a.height != windowHeight {
+		t.Fatalf("favorites: height %d", h.a.height)
+	}
+	h.has("FAVORITES", "GitHub", "Visa")
+	for _, s := range []string{"ALL ITEMS", "RECENTLY USED", "SUGGESTIONS"} {
+		if h.tt.HasText(s) {
+			t.Errorf("%q shows with the favorites", s)
+		}
+	}
+
+	// The default mode lists them all.
+	h.key(ui.Cmd, ui.KeyComma)
+	h.tt.SetSize(windowWidth, 2400)
+	h.settle()
+	h.click("Compact")
+	h.click("Default")
+	if h.a.cfg.WindowMode != "" {
+		t.Fatalf("mode %q", h.a.cfg.WindowMode)
+	}
+	h.key(0, ui.KeyEscape)
+	h.tt.SetSize(windowWidth, windowHeight)
+	h.settle()
+	h.has("FAVORITES", "ALL ITEMS")
+}
