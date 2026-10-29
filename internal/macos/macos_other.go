@@ -19,6 +19,8 @@ func IsRunning(bundleID string) bool                     { return false }
 func IsInstalled(bundleID string) bool                   { return false }
 func OpenApp(bundleID string, urls ...string) error      { return errors.ErrUnsupported }
 func DefaultBrowser() string                             { return "" }
+func CountryCode(name string) string                     { return "" }
+func CountryName(code string) string                     { return "" }
 func LaunchHidden(bundleID string) error                 { return errors.ErrUnsupported }
 func IsBrowser(bundleID string) bool                     { return false }
 func Trusted(prompt bool) bool                           { return false }

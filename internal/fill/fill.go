@@ -32,6 +32,10 @@ type Request struct {
 	// fill, as "https://github.com" of the page the user was on; without
 	// it, the page's as the fill first types.
 	Origin string
+	// Card and Identity fill a page's fields of a card, or an identity,
+	// in place of a login's; Matches the pages they may fill.
+	Card     *Card
+	Identity *Identity
 }
 
 var (
@@ -151,7 +155,14 @@ func Fill(ctx context.Context, kb Keyboard, target macos.App, req Request) error
 	}
 	f := &filler{ctx: ctx, kb: kb, req: req, pid: target.PID, bundle: target.BundleID, browser: macos.IsBrowser(target.BundleID), origin: req.Origin}
 	fill := f.fillApp
-	if f.browser {
+	switch {
+	case req.Card != nil || req.Identity != nil:
+		if !f.browser {
+			return ErrNoField // an app's fields tell too little to know a card's
+		}
+		kb.Prepare(f.pid)
+		fill = f.fillForm
+	case f.browser:
 		kb.Prepare(f.pid)
 		fill = f.fillPage
 	}

@@ -15,6 +15,20 @@ import (
 func TestMain(m *testing.M) {
 	poll, settle, appWait, pageWait, releaseWait = time.Millisecond, 30*time.Millisecond, 30*time.Millisecond, 100*time.Millisecond, 30*time.Millisecond
 	keyPause, slowPause = 0, 0
+	choiceWait, typeAhead = 5*time.Millisecond, 0
+	countries := map[string]string{"US": "United States", "DE": "Germany", "GB": "United Kingdom"}
+	countryCode = func(c string) string {
+		if len(c) <= 2 {
+			return strings.ToUpper(c)
+		}
+		for code, name := range countries {
+			if strings.EqualFold(name, c) {
+				return code
+			}
+		}
+		return ""
+	}
+	countryName = func(code string) string { return countries[code] }
 	os.Exit(m.Run())
 }
 
@@ -69,6 +83,8 @@ type element struct {
 	// time; silent is a password field that tells nothing of what it holds.
 	drop   int
 	silent bool
+	// options are a menu's, as a page's select, which typing chooses of.
+	options []string
 }
 
 func newPage(browser bool, els ...*element) *page {
@@ -139,6 +155,16 @@ func (p *page) TypeText(_ int, s string, _ time.Duration) {
 	}
 	e := p.focus
 	if e == nil || !e.field || e.gone {
+		return
+	}
+	if e.typ == "select" {
+		// A menu chooses the first option that starts so.
+		for _, o := range e.options {
+			if strings.HasPrefix(strings.ToLower(o), strings.ToLower(s)) {
+				e.value = o
+				break
+			}
+		}
 		return
 	}
 	if p.onPut != nil {
@@ -249,7 +275,7 @@ func (e *element) PageURL() string {
 
 func (e *element) SetValue(v string) bool {
 	p := e.p
-	if e.gone || p.noSet {
+	if e.gone || p.noSet || e.typ == "select" {
 		return false
 	}
 	p.done = append(p.done, "set "+e.name+"="+v)
