@@ -136,6 +136,8 @@ A login's websites match a page by their own URI match detection, or where
 they don't say, by Settings → Filling → Default URI match detection: Base
 domain, unless you choose Host, Starts with, Exact or Never. Lense suggests
 the logins of the page you're on by it, and fills no page it doesn't match.
+After filling a login, Lense copies its one-time password, for the page that
+asks for it next, unless you turn that off there.
 
 ### Search filters
 

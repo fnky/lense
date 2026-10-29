@@ -1609,7 +1609,7 @@ func (a *app) fillInto(it *bw.Item, page string) {
 					a.sys.show()
 					return
 				}
-				if hasCode {
+				if hasCode && a.cfg.CopyTOTP {
 					// For the page that asks for it next, as Bitwarden
 					// does after it fills.
 					a.sys.copy(code, true)

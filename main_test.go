@@ -1156,8 +1156,8 @@ func TestFillsOnlyTheLoginsPages(t *testing.T) {
 func TestFillingSettings(t *testing.T) {
 	h := newHarness(t, nil, true)
 	h.unlock()
-	if h.a.cfg.URIMatch != search.MatchDomain {
-		t.Fatalf("default match %d", h.a.cfg.URIMatch)
+	if h.a.cfg.URIMatch != search.MatchDomain || !h.a.cfg.CopyTOTP {
+		t.Fatalf("defaults: match %d, copy codes %v", h.a.cfg.URIMatch, h.a.cfg.CopyTOTP)
 	}
 	// Safari shows a page of GitHub's, on another host than its login's.
 	h.sys.pageURLs = map[string]string{"com.apple.Safari": "https://gist.github.com/ada"}
@@ -1175,7 +1175,7 @@ func TestFillingSettings(t *testing.T) {
 
 	h.tt.SetSize(windowWidth, 2400) // all of the settings, unscrolled
 	h.key(ui.Cmd, ui.KeyComma)
-	h.has("Default URI match detection")
+	h.has("Default URI match detection", "Copy the one-time password")
 	h.click("Base domain")
 	h.click("Host")
 	if h.a.cfg.URIMatch != search.MatchHost || h.a.suggested[github] {
@@ -1190,7 +1190,18 @@ func TestFillingSettings(t *testing.T) {
 	h.click("Starts with")
 	h.click("Host")
 
-	// The fill matches the pages it types into as the settings say.
+	// The fill matches the pages it types into as the settings say, and
+	// copies no code after it, as they say too.
+	// The switch at the end of the setting's row, beside its two lines.
+	label, ok := h.tt.Find("Copy the one-time password")
+	if !ok {
+		t.Fatalf("no setting in %q", h.tt.Texts())
+	}
+	h.tt.ClickAt(windowWidth-28-18, label.Y+17)
+	h.settle()
+	if h.a.cfg.CopyTOTP {
+		t.Fatal("the switch didn't turn copying codes off")
+	}
 	h.key(0, ui.KeyEscape)
 	h.tt.Type("git")
 	h.settle()
@@ -1200,6 +1211,15 @@ func TestFillingSettings(t *testing.T) {
 	}
 	if m := h.sys.filled[0].matches; m("https://gist.github.com/") || !m("https://github.com/settings") {
 		t.Error("the fill doesn't match by host")
+	}
+	code, _, _ := h.a.code(h.a.selected())
+	if slices.Contains(h.sys.copied, code) {
+		t.Errorf("copied the code: %q", h.sys.copied)
+	}
+	h.a.cfg.CopyTOTP = true
+	h.key(ui.Shift, ui.KeyEnter)
+	if code, _, _ := h.a.code(h.a.selected()); h.sys.last() != code {
+		t.Errorf("copied %q, not the code", h.sys.copied)
 	}
 }
 

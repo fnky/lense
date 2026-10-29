@@ -116,6 +116,7 @@ func (a *app) settingsView(c *ui.Context, k ink) {
 					c.After(2 * time.Second) // notice as it's allowed
 				}
 				a.uriMatchRow(c, k)
+				switchRow(c.Key("totp"), k, "Copy the one-time password", "After filling a login that has one, for the page that asks for it next.", &a.cfg.CopyTOTP, a.changed)
 			})
 			a.shortcutsSection(c.Key("keys"), k)
 			ui.Row(c).Gap(8).AlignItems(ui.Center).Margin(4, 0, 0, 0).FontSize(11).TextColor(k.faint).Children(func() {

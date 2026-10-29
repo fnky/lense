@@ -34,6 +34,9 @@ type config struct {
 	// say, as Bitwarden's default URI match detection: search.MatchDomain
 	// and the others.
 	URIMatch int `json:"uriMatch"`
+	// CopyTOTP copies a login's one-time password after filling it, for
+	// the page that asks for it next.
+	CopyTOTP bool `json:"copyTotp"`
 
 	// Material is what the window shows behind its content: "solid", or a
 	// material of macOS, which blurs what is behind the window.
@@ -70,6 +73,7 @@ func defaultConfig() config {
 		TouchID:        true,
 		LockOnSleep:    true,
 		ClearClipboard: 90,
+		CopyTOTP:       true,
 		Material:       "popover",
 		Tooltips:       true,
 	}
