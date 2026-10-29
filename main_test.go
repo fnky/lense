@@ -1027,6 +1027,16 @@ func TestOpenAndFillMenu(t *testing.T) {
 	h.a.setFront(macos.App{PID: 42, Name: "Notes", BundleID: "com.apple.Notes"})
 	h.tt.Type("tracker")
 	h.settle()
+	// The footer leaves out the arrows to the fields and back.
+	if h.tt.HasText("Fields") {
+		t.Error("the footer shows the key of the fields")
+	}
+	h.key(0, ui.KeyRight)
+	if h.a.mode != modeDetails || h.tt.HasText("Back") {
+		t.Errorf("mode %v, the footer shows the key back", h.a.mode)
+	}
+	h.key(0, ui.KeyLeft)
+
 	// Away from its websites, Return offers them to open, and fill.
 	h.has("Open and Fill in Safari")
 	h.key(0, ui.KeyEnter)

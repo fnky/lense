@@ -493,7 +493,6 @@ func (a *app) footerBar(c *ui.Context, k ink, bar ui.Element) {
 		case a.mode == modeVaults:
 			hint("vault-choose", "Search the vault")
 			hint("vault-expand", "Show collections")
-			hint("vault-collapse", "Back")
 		case a.mode == modeDetails && it != nil:
 			if _, f, ok := a.focusedField(); ok {
 				hint("field-copy", "Copy "+f.label)
@@ -503,7 +502,6 @@ func (a *app) footerBar(c *ui.Context, k ink, bar ui.Element) {
 					hint("field-reveal", "Large Type")
 				}
 			}
-			hint("field-back", "Back")
 		case it == nil && a.sel >= 0:
 			hint("default", "Use filter")
 		case it == nil:
@@ -525,7 +523,6 @@ func (a *app) footerBar(c *ui.Context, k ink, bar ui.Element) {
 			if _, _, ok := a.code(it); ok {
 				hint("copy-code", "Copy code")
 			}
-			hint("details", "Fields")
 		}
 		ui.Spacer(c)
 		if it != nil && a.mode != modeVaults {
