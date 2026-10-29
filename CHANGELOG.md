@@ -4,6 +4,50 @@ All notable changes to Lense are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## 0.3.0 - 2026-10-29
+
+### Added
+
+- ↩ on a login opens its website in your default browser and fills it, when
+  the page you came from isn't one of its websites; a login of several
+  websites lets you choose one first, with ↑ ↓ and ↩, or esc to close the
+  menu. ⇧↩ opens and fills a website even when you're on one of them already,
+  and the footer says so as you hold ⇧.
+- Cards and identities fill the page you came from, as Bitwarden's browser
+  extension fills them: a card's name, number, expiration, as the page's
+  field shows it, and security code, and an identity's name, address, state,
+  country and the rest, choosing in the page's menus too. Where the page has
+  no such fields, ↩ copies the card's number or the identity's email.
+- Settings › Filling › Default URI match detection: how a login's websites
+  match the page you're on where they don't say, as in Bitwarden: Base domain
+  (recommended), Host, Starts with, Exact or Never. Lense suggests the logins
+  it matches, and fills no other page. Base domain knows the domains of the
+  Public Suffix List, as Bitwarden does: one site on github.io isn't another.
+- Settings › Filling › Copy the one-time password: after filling a login that
+  has one, Lense copies its one-time password, for the page that asks for it
+  next. On by default.
+- Settings › General › Launch Lense at login.
+- Settings › Appearance › Window mode: Compact shows the search alone until
+  you type, and with Show favorites in compact mode, your favorites under it.
+- Typing = suggests =folder: and =collection: with the other filters, and then
+  the names of your folders and collections.
+- Scrolled past its end, a list's scroll bar shrinks as the content stretches,
+  as macOS's does.
+
+### Changed
+
+- Lense fills a page's login form as Bitwarden's browser extension does: it
+  finds the username, password and one-time password fields by their type,
+  label and placeholder, a box for each digit of a code too, and sets each at
+  once rather than typing it. It fills only a page with a login form, on one of
+  the login's websites, never a form in a frame of the page, as another site's
+  is, and only while the browser is in front, on the page the fill began on.
+- Settings › Keyboard shortcuts records a key in a popover by the key you
+  clicked, or by +: it shows the modifiers as you hold them, the new key in
+  green once it's set, or why a key can't be one, and the key keeps what it
+  had until then.
+- The footer leaves out the keys to an item's fields and back.
+
 ## 0.2.1 - 2026-10-27
 
 ### Fixed
