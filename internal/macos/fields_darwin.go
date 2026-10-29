@@ -215,6 +215,20 @@ func stringAttr(el uintptr, name string) string {
 	return goString(objc.ID(v))
 }
 
+// boolAttr returns an attribute of an element that is true or false, or
+// otherwise for one it doesn't tell.
+func boolAttr(el uintptr, name string, otherwise bool) bool {
+	v := copyAttr(el, name)
+	if v == 0 {
+		return otherwise
+	}
+	defer cfRelease(v)
+	if !objc.Send[bool](objc.ID(v), sel("isKindOfClass:"), class("NSNumber")) {
+		return otherwise
+	}
+	return objc.Send[bool](objc.ID(v), sel("boolValue"))
+}
+
 // children returns the children of an element, retained.
 func children(el uintptr) []uintptr {
 	arr := copyAttr(el, "AXChildren")
@@ -435,11 +449,7 @@ func infoOf(el, app uintptr, page rect) FieldInfo {
 		AriaLabel:   stringAttr(el, "AXDescription"),
 		Help:        stringAttr(el, "AXHelp"),
 		Value:       stringAttr(el, "AXValue"),
-		Enabled:     true,
-	}
-	if v := copyAttr(el, "AXEnabled"); v != 0 {
-		info.Enabled = objc.Send[bool](objc.ID(v), sel("boolValue"))
-		cfRelease(v)
+		Enabled:     boolAttr(el, "AXEnabled", true),
 	}
 	axIsAttributeSettable(el, uintptr(nsString("AXValue")), &info.Settable)
 	info.Form, info.FormHint = formOf(el)

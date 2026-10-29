@@ -171,7 +171,8 @@ Filters combine with words and with each other, and complete as you type `=`.
   identity's fields Lense fills as the extension does too, by its words for
   them: a card's name, number, expiration, as its placeholder shows it, and
   code; an identity's name, address, state and country, as their codes, and
-  the rest; a menu, as of a month, chosen as you would, typing its start.
+  the rest; a menu, as of a month, Lense opens as you would, and chooses
+  its option, as the extension picks it.
   Those it fills only on the page you came from. An app's own fields,
   which tell less, Lense types into: the one with the keyboard focus, then,
   with Tab, the password's. It checks that each field took what it was

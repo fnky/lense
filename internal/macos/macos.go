@@ -29,6 +29,12 @@ type Element struct {
 	info *FieldInfo
 }
 
+// Menu is a menu another app shows open, as the one a page's select
+// opens: the app keeps it while the Menu lives.
+type Menu struct {
+	ref uintptr
+}
+
 // FieldInfo is what accessibility tells of a field of a page, read as
 // it's found: what a fill decides by, as Bitwarden decides by a field's
 // HTML.

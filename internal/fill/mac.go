@@ -49,6 +49,15 @@ func (Mac) Fields(pid int, near Field) []Field {
 	return out
 }
 
+func (Mac) Menu(pid int, of Field) Menu {
+	if mf, ok := of.(macField); ok {
+		if m := macos.OpenMenu(pid, mf.e); m != nil {
+			return m
+		}
+	}
+	return nil
+}
+
 // macField is a field of another app, as accessibility shows it.
 type macField struct{ e *macos.Element }
 

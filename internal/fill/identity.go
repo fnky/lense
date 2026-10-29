@@ -176,10 +176,10 @@ var countryCode = func(country string) string {
 // countryName returns the English name of a country of an ISO code.
 var countryName = macos.CountryName
 
-// identityChoices returns the ways a menu may name an identity's value, in
-// turn, and whether what it shows chosen names it: a state by its name, as
-// "Massachusetts", or its code, a country by its name or its code.
-func identityChoices(id Identity, part, value string) ([]string, func(shown string) bool) {
+// identityPick returns which item of a menu, by their titles, names an
+// identity's value: a state's titled as its name, as "Massachusetts", or
+// its code, a country's as its name or its code.
+func identityPick(id Identity, part, value string) func(items []string) int {
 	var choices []string
 	switch part {
 	case "state":
@@ -195,7 +195,7 @@ func identityChoices(id Identity, part, value string) ([]string, func(shown stri
 			out = append(out, c)
 		}
 	}
-	return out, func(shown string) bool { return containsFold(out, strings.TrimSpace(shown)) }
+	return firstOf(func(t string) bool { return containsFold(out, t) })
 }
 
 func containsFold(list []string, s string) bool {

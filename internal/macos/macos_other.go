@@ -44,6 +44,10 @@ func Fields(pid int, near *Element) []*Element           { return nil }
 func (e *Element) SetValue(text string) bool             { return false }
 func (e *Element) PageURL() string                       { return "" }
 func (e *Element) Focus() bool                           { return false }
+func OpenMenu(pid int, of *Element) *Menu                { return nil }
+func (m *Menu) Items() []string                          { return nil }
+func (m *Menu) Choose(i int) bool                        { return false }
+func (m *Menu) Close() bool                              { return false }
 func CopySecret(text string, concealed bool) int         { return -1 }
 func ClearIfUnchanged(count int) bool                    { return false }
 func ScrollPhase() (phase, momentum Phase)               { return 0, 0 }
@@ -74,4 +78,5 @@ const (
 const (
 	KeyTab    uint16 = 48
 	KeyReturn uint16 = 36
+	KeySpace  uint16 = 49
 )

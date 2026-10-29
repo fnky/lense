@@ -2,6 +2,8 @@ package fill
 
 import (
 	"errors"
+	"slices"
+	"strings"
 	"testing"
 )
 
@@ -78,18 +80,63 @@ func TestCardMenus(t *testing.T) {
 		t.Fatal(err)
 	}
 	p.holds(t, "exp-month", "08 - August", "exp-year", "2029")
+	if !p.did("space") || !p.did("choose exp-month=08 - August") || slices.ContainsFunc(p.done, func(d string) bool { return strings.HasPrefix(d, "type") }) {
+		t.Errorf("chose %q, not of the menus opened", p.done)
+	}
 	// Months by name, years of two digits.
 	p = newPage(true, in(1, text("card-number"), menu("exp-month", months...), menu("exp-year", "YY", "26", "29"))...)
 	if err := fill(t, p, anyPage(Request{Card: &visa})); err != nil {
 		t.Fatal(err)
 	}
 	p.holds(t, "exp-month", "August", "exp-year", "29")
-	// A menu of no such option stays as it was.
+	// Twelve months, or thirteen, by their place, as Bitwarden's extension
+	// picks them: of any language.
+	mois := []string{"janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.", "déc."}
+	for _, items := range [][]string{mois, append([]string{"Mois"}, mois...)} {
+		p = newPage(true, in(1, text("card-number"), menu("exp-month", items...))...)
+		if err := fill(t, p, anyPage(Request{Card: &visa})); err != nil {
+			t.Fatal(err)
+		}
+		p.holds(t, "exp-month", "août")
+	}
+	// A menu of no such option stays as it was, closed.
 	p = newPage(true, in(1, text("card-number"), menu("card-type", "Choose", "Mastercard"))...)
 	if err := fill(t, p, anyPage(Request{Card: &visa})); err != nil {
 		t.Fatal(err)
 	}
 	p.holds(t, "card-type", "Choose")
+	if !p.did("close card-type") || p.opened != nil {
+		t.Errorf("the menu stays open: %q", p.done)
+	}
+}
+
+func TestMenusLeftAsTheyAre(t *testing.T) {
+	// One that shows the option already isn't opened.
+	p := newPage(true, in(1, text("card-number"), menu("exp-year", "2029", "2030"))...)
+	if err := fill(t, p, anyPage(Request{Card: &visa})); err != nil {
+		t.Fatal(err)
+	}
+	if p.did("space") {
+		t.Errorf("opened a menu that showed the option: %q", p.done)
+	}
+	// One whose menu doesn't show, where accessibility doesn't tell a
+	// browser's menus, isn't chosen of; the rest of the card fills.
+	p = newPage(true, in(1, text("card-number"), menu("exp-year", "Year", "2029"))...)
+	p.noMenu = true
+	if err := fill(t, p, anyPage(Request{Card: &visa})); err != nil {
+		t.Fatal(err)
+	}
+	p.holds(t, "card-number", "4111111111111111", "exp-year", "Year")
+	// Nor where another app came in front as it opened: closed.
+	p = newPage(true, in(1, menu("exp-year", "Year", "2029"), text("card-number"))...)
+	p.awayOnMenu = true
+	if err := fill(t, p, anyPage(Request{Card: &visa})); !errors.Is(err, ErrNotInFront) {
+		t.Errorf("err %v", err)
+	}
+	p.holds(t, "exp-year", "Year", "card-number", "")
+	if p.opened != nil {
+		t.Errorf("the menu stays open: %q", p.done)
+	}
 }
 
 func TestCardFillsEachPartOnce(t *testing.T) {
@@ -155,6 +202,9 @@ func TestIdentityMenus(t *testing.T) {
 		t.Fatal(err)
 	}
 	p.holds(t, "state", "Massachusetts", "country", "United States")
+	if p.did("choose state=Maine") {
+		t.Errorf("chose by a start: %q", p.done)
+	}
 }
 
 func TestIdentityOfAnUnknownState(t *testing.T) {

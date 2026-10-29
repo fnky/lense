@@ -44,6 +44,7 @@ var (
 	axGetPid                      func(el uintptr, pid *int32) int32
 	axCopyParameterizedValue      func(el uintptr, attr uintptr, param uintptr, out *uintptr) int32
 	axSetAttributeValue           func(el uintptr, attr uintptr, value uintptr) int32
+	axPerformAction               func(el uintptr, action uintptr) int32
 	axValueGetValue               func(value uintptr, typ int32, out unsafe.Pointer) bool
 	axTrustedPromptKey            uintptr // kAXTrustedCheckOptionPrompt
 )
@@ -106,6 +107,7 @@ func load() error {
 		purego.RegisterLibFunc(&axCopyParameterizedValue, as, "AXUIElementCopyParameterizedAttributeValue")
 		purego.RegisterLibFunc(&axValueGetValue, as, "AXValueGetValue")
 		purego.RegisterLibFunc(&axSetAttributeValue, as, "AXUIElementSetAttributeValue")
+		purego.RegisterLibFunc(&axPerformAction, as, "AXUIElementPerformAction")
 		if p, err := purego.Dlsym(as, "kAXTrustedCheckOptionPrompt"); err == nil {
 			axTrustedPromptKey = *(*uintptr)(cptr(p))
 		}

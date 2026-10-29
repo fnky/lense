@@ -253,31 +253,45 @@ func expiration(month int, year, hints string) string {
 // monthNames are the months, in English, as a menu may name them.
 var monthNames = []string{"January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"}
 
-// menuChoices returns the ways a menu may name a card's value, in turn,
-// and whether what it shows chosen names it: a month as "03", "3",
-// "March" or "Mar"; a year as "2027" or "27".
-func menuChoices(c Card, cf cardField, value string) ([]string, func(shown string) bool) {
+// menuPick returns which item of a menu, by their titles, names a card's
+// value: a month's, of twelve items, or thirteen, one by its place, as
+// Bitwarden's extension picks it, else the one titled as "03", "3",
+// "March" or "Mar"; a year's titled as "2027" or "27".
+func menuPick(c Card, cf cardField, value string) func(items []string) int {
 	switch month, _ := strconv.Atoi(c.ExpMonth); cf.part {
 	case "month":
 		if month < 1 || month > 12 {
-			return nil, nil
+			return firstOf(func(string) bool { return false })
 		}
-		name := monthNames[month-1]
-		return []string{fmt.Sprintf("%02d", month), strconv.Itoa(month), name, name[:3]}, func(shown string) bool {
-			shown = strings.ToLower(strings.TrimSpace(shown))
-			if n, err := strconv.Atoi(leadingDigits(shown)); err == nil {
+		name := strings.ToLower(monthNames[month-1][:3])
+		titled := firstOf(func(t string) bool {
+			if n, err := strconv.Atoi(leadingDigits(t)); err == nil {
 				return n == month
 			}
-			return strings.HasPrefix(shown, strings.ToLower(name[:3]))
+			return strings.HasPrefix(strings.ToLower(t), name)
+		})
+		return func(items []string) int {
+			switch len(items) {
+			case 12:
+				return month - 1
+			case 13:
+				// The months first, of a last of none; else after one that
+				// names none, as "Month".
+				if items[0] != "" && items[12] == "" {
+					return month - 1
+				}
+				return month
+			}
+			return titled(items)
 		}
 	case "year":
 		full, short := fullYear(c.ExpYear), shortYear(c.ExpYear)
-		return []string{full, short}, func(shown string) bool {
-			d := leadingDigits(strings.TrimSpace(shown))
+		return firstOf(func(t string) bool {
+			d := leadingDigits(t)
 			return d == full || d == short
-		}
+		})
 	}
-	return []string{value}, func(shown string) bool { return strings.EqualFold(strings.TrimSpace(shown), value) }
+	return firstOf(func(t string) bool { return strings.EqualFold(t, value) })
 }
 
 // leadingDigits returns the digits s begins with.

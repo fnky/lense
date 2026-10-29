@@ -90,6 +90,17 @@ type Field interface {
 	Same(Field) bool
 }
 
+// Menu is a menu an app shows open, as a page's select opens one.
+type Menu interface {
+	// Items are the titles of its items, in their order; "" for one that
+	// can't be chosen.
+	Items() []string
+	// Choose chooses the item at i, as a click would, which closes it.
+	Choose(i int) bool
+	// Close closes it, choosing nothing.
+	Close() bool
+}
+
 // Keyboard is what a fill asks of macOS: the apps, the fields of the one
 // it fills, and the keys it types there. Mac is macOS's.
 type Keyboard interface {
@@ -107,6 +118,9 @@ type Keyboard interface {
 	// Fields are the fields of the page near is on, or of the page the
 	// app shows, in the page's order, those of its frames too.
 	Fields(pid int, near Field) []Field
+	// Menu is the menu the app shows open of a field, a page's select, or
+	// nil.
+	Menu(pid int, of Field) Menu
 	TypeText(pid int, text string, pause time.Duration)
 	PressKey(pid int, code uint16)
 	SelectAll(pid int)

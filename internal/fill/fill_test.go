@@ -15,7 +15,6 @@ import (
 func TestMain(m *testing.M) {
 	poll, settle, appWait, pageWait, releaseWait = time.Millisecond, 30*time.Millisecond, 30*time.Millisecond, 100*time.Millisecond, 30*time.Millisecond
 	keyPause, slowPause = 0, 0
-	choiceWait, typeAhead = 5*time.Millisecond, 0
 	countries := map[string]string{"US": "United States", "DE": "Germany", "GB": "United Kingdom"}
 	countryCode = func(c string) string {
 		if len(c) <= 2 {
@@ -64,6 +63,11 @@ type page struct {
 	done []string
 	// onPut runs as a field takes a value, set or typed, before it holds it.
 	onPut func(p *page, e *element)
+	// opened is the select whose menu shows, as Space opens it; noMenu a
+	// browser whose menus accessibility doesn't tell, and awayOnMenu one
+	// that another app comes in front of as a menu opens.
+	opened             *element
+	noMenu, awayOnMenu bool
 }
 
 // element is an element of the page.
@@ -83,7 +87,8 @@ type element struct {
 	// time; silent is a password field that tells nothing of what it holds.
 	drop   int
 	silent bool
-	// options are a menu's, as a page's select, which typing chooses of.
+	// options are a menu's, as a page's select's, "" for one that can't be
+	// chosen.
 	options []string
 }
 
@@ -157,16 +162,6 @@ func (p *page) TypeText(_ int, s string, _ time.Duration) {
 	if e == nil || !e.field || e.gone {
 		return
 	}
-	if e.typ == "select" {
-		// A menu chooses the first option that starts so.
-		for _, o := range e.options {
-			if strings.HasPrefix(strings.ToLower(o), strings.ToLower(s)) {
-				e.value = o
-				break
-			}
-		}
-		return
-	}
 	if p.onPut != nil {
 		p.onPut(p, e)
 		if e.gone {
@@ -189,6 +184,13 @@ func (p *page) TypeText(_ int, s string, _ time.Duration) {
 }
 
 func (p *page) PressKey(_ int, code uint16) {
+	if code == macos.KeySpace {
+		p.done = append(p.done, "space")
+		if e := p.focus; e != nil && e.typ == "select" && !e.gone {
+			p.opened, p.away = e, p.away || p.awayOnMenu
+		}
+		return
+	}
 	p.done = append(p.done, "tab")
 	p.away = p.away || p.awayOnTab
 	i := slices.Index(p.elements, p.focus)
@@ -226,6 +228,31 @@ func (p *page) Fields(int, Field) []Field {
 		out = out[:len(out)-1]
 	}
 	return out
+}
+
+func (p *page) Menu(_ int, of Field) Menu {
+	if p.opened == nil || p.noMenu || p.opened != of {
+		return nil
+	}
+	return menuOf{p.opened}
+}
+
+// menuOf is the menu of a select's options, open.
+type menuOf struct{ e *element }
+
+func (m menuOf) Items() []string { return m.e.options }
+
+func (m menuOf) Choose(i int) bool {
+	p := m.e.p
+	p.done = append(p.done, "choose "+m.e.name+"="+m.e.options[i])
+	m.e.value, p.opened = m.e.options[i], nil
+	return true
+}
+
+func (m menuOf) Close() bool {
+	m.e.p.done = append(m.e.p.done, "close "+m.e.name)
+	m.e.p.opened = nil
+	return true
 }
 
 func (e *element) Info() macos.FieldInfo {

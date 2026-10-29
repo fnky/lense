@@ -1,20 +1,18 @@
 package fill
 
-import "time"
+import (
+	"strings"
+	"time"
 
-// How long a menu takes what is typed into it, which tests shorten: a
-// moment for it to show what it chose, and a while for it to forget what
-// was typed, to take another start.
-var choiceWait, typeAhead = 400 * time.Millisecond, 1100 * time.Millisecond
+	"lense/internal/macos"
+)
 
 // formField is a field a card or an identity fills: the value it takes,
-// and for a menu, the ways it may name it, in turn, and whether what it
-// shows chosen names it.
+// and for a menu, which of its items, by their titles, names it, or -1.
 type formField struct {
-	field   Field
-	value   string
-	choices []string
-	shows   func(shown string) bool
+	field Field
+	value string
+	pick  func(items []string) int
 }
 
 // planForm plans the fill of a page's fields by the card or the identity
@@ -29,8 +27,7 @@ func planForm(found []Field, req Request) []formField {
 			if v == "" {
 				continue
 			}
-			choices, shows := menuChoices(*req.Card, cf, v)
-			out = append(out, formField{cf.field.Field, v, choices, shows})
+			out = append(out, formField{cf.field.Field, v, menuPick(*req.Card, cf, v)})
 		}
 	case req.Identity != nil:
 		for _, idf := range planIdentity(found) {
@@ -38,8 +35,7 @@ func planForm(found []Field, req Request) []formField {
 			if v == "" {
 				continue
 			}
-			choices, shows := identityChoices(*req.Identity, idf.part, v)
-			out = append(out, formField{idf.field.Field, v, choices, shows})
+			out = append(out, formField{idf.field.Field, v, identityPick(*req.Identity, idf.part, v)})
 		}
 	}
 	return out
@@ -86,7 +82,7 @@ func (f *filler) fillForm(req Request, wait time.Duration) error {
 	filled := false
 	for _, ff := range plan {
 		if ff.field.Info().Type == "select" {
-			ok, err := f.choose(ff.field, ff.choices, ff.shows)
+			ok, err := f.choose(ff.field, ff.pick)
 			if err != nil {
 				return err
 			}
@@ -144,36 +140,56 @@ func unframedAll(fields []Field) []Field {
 	return out
 }
 
-// choose chooses the option of a menu that names a value, as the user
-// would, typing the start of it: each of choices in turn, till the menu
-// shows one it names. A menu that shows none goes back to the option it
-// had, as Bitwarden's extension leaves a menu of no such option as it is.
-func (f *filler) choose(field Field, choices []string, shows func(string) bool) (bool, error) {
-	before := field.Value()
-	if shows(before) {
-		return true, nil
+// choose chooses the option of a menu, a page's select, that pick picks
+// of its items, as the user would: the menu opened with Space, and the
+// item pressed. A menu of no such option it closes, as Bitwarden's
+// extension leaves a select of no such option as it is, as one that
+// doesn't show, where accessibility doesn't tell the browser's menus.
+func (f *filler) choose(field Field, pick func(items []string) int) (bool, error) {
+	if pick([]string{strings.TrimSpace(field.Value())}) == 0 {
+		return true, nil // it shows the option already
 	}
-	for i, c := range choices {
-		if !f.focus(field) {
-			return false, ErrNotTaken
-		}
-		if err := f.commit(field); err != nil {
-			return false, err
-		}
-		if i > 0 {
-			sleep(f.ctx, typeAhead)
-		}
-		f.kb.TypeText(f.pid, c, keyPause)
-		if waitFor(f.ctx, choiceWait, func() bool { return shows(field.Value()) }) {
-			return true, nil
-		}
+	if !f.focus(field) {
+		return false, ErrNotTaken
 	}
-	if before != "" && field.Value() != before {
-		sleep(f.ctx, typeAhead)
-		if err := f.commit(field); err != nil {
-			return false, err
-		}
-		f.kb.TypeText(f.pid, before, keyPause)
+	if err := f.commit(field); err != nil {
+		return false, err
 	}
-	return false, nil
+	f.kb.PressKey(f.pid, macos.KeySpace)
+	var menu Menu
+	if !waitFor(f.ctx, settle, func() bool { menu = f.kb.Menu(f.pid, field); return menu != nil }) {
+		return false, nil
+	}
+	items := menu.Items()
+	i := pick(items)
+	if i < 0 || i >= len(items) || items[i] == "" {
+		menu.Close()
+		return false, nil
+	}
+	// The browser in front, on the page, as the item is pressed too.
+	if err := f.commit(field); err != nil {
+		menu.Close()
+		return false, err
+	}
+	if !menu.Choose(i) {
+		menu.Close()
+		return false, ErrNotTaken
+	}
+	if !waitFor(f.ctx, settle, func() bool { return strings.EqualFold(strings.TrimSpace(field.Value()), items[i]) }) {
+		return false, ErrNotTaken
+	}
+	return true, nil
+}
+
+// firstOf picks the first item of a menu whose title names says names
+// the value.
+func firstOf(names func(title string) bool) func(items []string) int {
+	return func(items []string) int {
+		for i, t := range items {
+			if t != "" && names(t) {
+				return i
+			}
+		}
+		return -1
+	}
 }

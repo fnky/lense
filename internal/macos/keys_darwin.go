@@ -106,6 +106,7 @@ func EnableWebAccessibility(pid int) {
 const (
 	KeyTab    uint16 = 48
 	KeyReturn uint16 = 36
+	KeySpace  uint16 = 49
 )
 
 // The keys typed come from a source of their own, apart from the keys the
