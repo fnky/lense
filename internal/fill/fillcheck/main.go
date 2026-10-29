@@ -58,6 +58,10 @@ var cases = []struct {
 	// refused is why nothing is to be typed: a fill of no field, a page of
 	// another site or a frame.
 	refused string
+	// card and identity fill the form with a card's, or an identity's; the
+	// page reports what the fields marked data-k hold, as want them.
+	card, identity bool
+	want           map[string]string
 }{
 	{name: "plain", body: `<form><input id=login_field name=login data-user autofocus><input id=password name=password type=password data-pass><button>Sign in</button></form>`},
 	{name: "link", body: `<form><input name=user data-user autofocus><a href="#">Forgot your username?</a><input type=password data-pass></form>`},
@@ -90,6 +94,24 @@ document.querySelector('[data-user]').addEventListener('input', () => setTimeout
 	// A field to trap a robot, out of sight.
 	{name: "honeypot", body: `<form><input id=username style="position: absolute; left: -9999px" data-trap><input type=email placeholder=Email data-user><input type=password data-pass></form>`},
 	{name: "open", body: `<form><input id=login_field name=login data-user autofocus><input id=password name=password type=password data-pass></form>`, open: true},
+	{name: "card", card: true, body: `<form>
+<label for=n>Name on card</label><input id=n data-k=name>
+<label for=c>Card number</label><input id=c data-k=number>
+<select id=exp-month aria-label="Expiration month" data-k=month><option value="">MM</option><option value="01">01</option><option value="02">02</option><option value="07">07</option><option value="08">08</option><option value="09">09</option><option value="12">12</option></select>
+<select id=exp-year aria-label="Expiration year" data-k=year><option value="">YYYY</option><option>2026</option><option>2028</option><option>2029</option><option>2030</option></select>
+<input id=cvc placeholder=CVC data-k=code>
+</form>`, want: map[string]string{"name": "Ada Lovelace", "number": "4111111111111111", "month": "08", "year": "2029", "code": "123"}},
+	{name: "cardexp", card: true, body: `<form><input id=card-number data-k=number><input id=cc-exp placeholder="MM / YY" data-k=exp><input type=password id=cvv data-k=code></form>`,
+		want: map[string]string{"number": "4111111111111111", "exp": "08/29", "code": "123"}},
+	{name: "identity", identity: true, body: `<form>
+<input id=first-name data-k=first><input id=last-name data-k=last><input type=email id=email data-k=email>
+<input id=address-line-1 data-k=address1><input id=city data-k=city>
+<select id=state data-k=state><option value="">State</option><option value=ME>Maine</option><option value=MD>Maryland</option><option value=MA>Massachusetts</option></select>
+<input id=postal-code data-k=postal>
+<select id=country data-k=country><option value="">Country</option><option value=DE>Germany</option><option value=GB>United Kingdom</option><option value=US>United States</option></select>
+<input type=tel id=phone data-k=phone>
+</form>`, want: map[string]string{"first": "Ada", "last": "Lovelace", "email": "ada@example.com", "address1": "12 Analytical Row",
+		"city": "Cambridge", "state": "MA", "postal": "02139", "country": "US", "phone": "+1 617 555 0100"}},
 	// A website's home page, without a login form: its search field takes
 	// nothing.
 	{name: "nologin", body: `<header><input name=q data-user autofocus></header><nav><a href="#">Sign in</a></nav>`, refused: "field"},
@@ -97,6 +119,17 @@ document.querySelector('[data-user]').addEventListener('input', () => setTimeout
 	// A login form in a frame, as another site's on the page.
 	{name: "iframe", body: `<p>Sign in below.</p><iframe src="/frame/iframe" style="width: 480px; height: 160px"></iframe>`, refused: "frame"},
 }
+
+// selectsForm has the menus of a card's expiration, for -probe -page
+// selects to see how they take a value.
+const selectsForm = `<form>
+<select id=month aria-label="Expiration month"><option value="">MM</option><option value="01">01 - January</option><option value="02">02 - February</option><option value="03">03 - March</option><option value="12">12 - December</option></select>
+<select id=year aria-label="Expiration year"><option value="">YYYY</option><option value="2026">2026</option><option value="2027">2027</option><option value="2028">2028</option></select>
+</form>
+<script>
+for (const s of document.querySelectorAll('select'))
+	s.addEventListener('change', () => fetch('/event', {method: 'POST', body: s.id + '=' + s.value}))
+</script>`
 
 // probeForm has fields of every kind a fill may meet, for -probe to list
 // what Dia tells of each.
@@ -153,7 +186,8 @@ const page = `<!doctype html><meta charset=utf-8><title>%[1]s</title>
 let seq = 0
 const report = () => {
 	const v = s => (document.querySelector(s) || {}).value || ''
-	fetch('/report/%[1]s', {method: 'POST', body: JSON.stringify({seq: ++seq, user: v('[data-user]'), pass: v('[data-pass]'), pass2: v('[data-pass2]'), totp: v('[data-totp]'), trap: v('[data-trap]')})})
+	const k = Object.fromEntries([...document.querySelectorAll('[data-k]')].map(e => [e.dataset.k, e.value]))
+	fetch('/report/%[1]s', {method: 'POST', body: JSON.stringify({seq: ++seq, user: v('[data-user]'), pass: v('[data-pass]'), pass2: v('[data-pass2]'), totp: v('[data-totp]'), trap: v('[data-trap]'), k})})
 }
 document.addEventListener('input', report, true)
 for (const t of ['focus', 'input', 'change', 'blur'])
@@ -165,10 +199,12 @@ type state struct {
 	User, Pass, Pass2, TOTP, Trap string
 }
 
-// report is what a page reports its fields hold, in turn.
+// report is what a page reports its fields hold, in turn: those marked
+// data-k by their marks.
 type report struct {
 	Seq int
 	state
+	K map[string]string
 }
 
 func main() {
@@ -210,6 +246,10 @@ func main() {
 			fmt.Fprintf(rw, page, c.name, c.body)
 		})
 	}
+	mux.HandleFunc("GET /selects", func(rw http.ResponseWriter, r *http.Request) {
+		rw.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprintf(rw, page, "selects", selectsForm)
+	})
 	mux.HandleFunc("GET /probe", func(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("Content-Type", "text/html; charset=utf-8")
 		fmt.Fprintf(rw, page, "probe", probeForm)
@@ -270,6 +310,16 @@ func main() {
 		// Set the first field's value as accessibility does, and the
 		// React-like one's, and see what the page made of it.
 		for i, c := range controls {
+			if in := c.Info(); in.Type == "select" {
+				// Typed into, as the user would, it chooses what starts so.
+				c.Focus()
+				time.Sleep(200 * time.Millisecond)
+				typed := map[string]string{"month": "03", "year": "2027"}[in.ID]
+				macos.TypeText(pid, typed, 4*time.Millisecond)
+				time.Sleep(600 * time.Millisecond)
+				fmt.Fprintf(w, "typed %q into %q: holds %q\n", typed, in.ID, c.Value())
+				continue
+			}
 			if id := c.Info().ID; id == "u1" || id == "react-user" || *probePage != "probe" {
 				c.Focus()
 				time.Sleep(200 * time.Millisecond)
@@ -300,6 +350,14 @@ func main() {
 		if c.elsewhere {
 			req.Matches = func(string) bool { return false }
 		}
+		anyPage := func(string) bool { return true }
+		switch {
+		case c.card:
+			req = fill.Request{Card: &fill.Card{Name: "Ada Lovelace", Number: "4111111111111111", Brand: "Visa", ExpMonth: "8", ExpYear: "2029", Code: "123"}, Matches: anyPage}
+		case c.identity:
+			req = fill.Request{Identity: &fill.Identity{First: "Ada", Last: "Lovelace", Email: "ada@example.com", Address1: "12 Analytical Row",
+				City: "Cambridge", State: "MA", PostalCode: "02139", Country: "US", Phone: "+1 617 555 0100"}, Matches: anyPage}
+		}
 		var err error
 		if c.open {
 			err = fill.Fill(ctx, kb, macos.App{}, withPage(req, base+c.name))
@@ -320,8 +378,26 @@ func main() {
 		cancel()
 		time.Sleep(700 * time.Millisecond) // for the page's last report
 		mu.Lock()
-		got := reports[c.name].state
+		got, gotK := reports[c.name].state, reports[c.name].K
 		mu.Unlock()
+		if c.want != nil {
+			verdict, wrong := "ok", []string{}
+			for k, v := range c.want {
+				if gotK[k] != v {
+					verdict = "FAIL"
+					wrong = append(wrong, fmt.Sprintf("%s %q, want %q", k, gotK[k], v))
+				}
+			}
+			if err != nil {
+				verdict = "FAIL"
+				wrong = append(wrong, err.Error())
+			}
+			if verdict == "FAIL" {
+				failed++
+			}
+			fmt.Fprintf(w, "%-9s %-4s %5.2fs  %d fields %s\n", c.name, verdict, took.Seconds(), len(c.want), strings.Join(wrong, ", "))
+			continue
+		}
 		var want state
 		fills := c.fills
 		if fills == "" && c.refused == "" {
