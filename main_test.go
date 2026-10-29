@@ -1229,6 +1229,36 @@ func TestFillingSettings(t *testing.T) {
 	}
 }
 
+func TestOneFillAtATime(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.unlock()
+	h.a.cfg.Recent = nil
+	h.tt.Type("git")
+	h.settle()
+	github := h.a.selected()
+	// A fill still typing turns another away.
+	h.a.filling = true
+	h.key(ui.Shift, ui.KeyEnter)
+	if len(h.sys.filled) != 0 {
+		t.Fatalf("filled %v as a fill typed", h.sys.filled)
+	}
+	h.has("Still filling: try again once it's done")
+	h.a.filling = false
+
+	// A fill refused leaves the recent items as they were.
+	h.sys.fillErr = &fill.PageError{URL: "https://example.net/"}
+	h.key(ui.Shift, ui.KeyEnter)
+	if len(h.sys.filled) != 1 || h.a.filling || len(h.a.cfg.Recent) != 0 {
+		t.Fatalf("filled %d, filling %v, recent %v", len(h.sys.filled), h.a.filling, h.a.cfg.Recent)
+	}
+	// One that fills makes its login recent.
+	h.sys.fillErr = nil
+	h.key(ui.Shift, ui.KeyEnter)
+	if len(h.sys.filled) != 2 || h.a.filling || !slices.Equal(h.a.cfg.Recent, []string{github.ID}) {
+		t.Fatalf("filled %d, filling %v, recent %v", len(h.sys.filled), h.a.filling, h.a.cfg.Recent)
+	}
+}
+
 func TestOneWebsiteOpensAtOnce(t *testing.T) {
 	h := newHarness(t, nil, true)
 	h.unlock()

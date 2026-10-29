@@ -245,6 +245,8 @@ type app struct {
 	flash      string
 	flashAt    time.Time
 	prob       *problem // over the items, as a fill that failed
+	// filling is whether a fill is typing, which another waits for.
+	filling bool
 	// confirm asks for the master password before going on, for an item
 	// that asks for it.
 	confirm     func()
@@ -1534,6 +1536,11 @@ func (a *app) fillInto(it *bw.Item, page string) {
 		return
 	}
 	a.guarded(it, func() {
+		// Two fills at once would type into each other's fields.
+		if a.filling {
+			a.say("Still filling: try again once it's done")
+			return
+		}
 		if !a.sys.trusted(false) {
 			a.prob = &problem{
 				title:  "Allow Lense to fill in other apps",
@@ -1553,9 +1560,8 @@ func (a *app) fillInto(it *bw.Item, page string) {
 			a.say("Couldn't decrypt the password of %s", it.Name)
 			return
 		}
-		name := it.Name
-		a.cfg.used(it.ID)
-		a.changed()
+		name, id := it.Name, it.ID
+		a.filling = true
 		a.sys.hide()
 		code, _, hasCode := a.code(it)
 		var origin string
@@ -1576,6 +1582,7 @@ func (a *app) fillInto(it *bw.Item, page string) {
 			defer cancel()
 			err := a.sys.fill(ctx, target, fillRequest{username: l.Username, password: password, page: page, matches: matches, origin: origin})
 			a.post(func() {
+				a.filling = false
 				var pe *fill.PageError
 				switch {
 				case errors.As(err, &pe):
@@ -1630,6 +1637,10 @@ func (a *app) fillInto(it *bw.Item, page string) {
 					a.sys.show()
 					return
 				}
+				// Recent only once it filled: a page that asks to be filled
+				// doesn't make a login recent.
+				a.cfg.used(id)
+				a.changed()
 				if hasCode && a.cfg.CopyTOTP {
 					// For the page that asks for it next, as Bitwarden
 					// does after it fills.
