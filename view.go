@@ -163,7 +163,7 @@ func (a *app) syncBar() {
 // takes them all.
 func (a *app) windowKeys(c *ui.Context) {
 	items := a.configured() && a.page == pageItems && a.unlocked()
-	if a.recordID != "" || a.confirm != nil || items && a.search.Focused(c) {
+	if a.rec != nil || a.confirm != nil || items && a.search.Focused(c) {
 		return
 	}
 	for _, act := range actions {
@@ -183,7 +183,7 @@ func (a *app) openSettings() {
 	if a.page == pageSettings {
 		return
 	}
-	a.recordID, a.keyErr = "", ""
+	a.rec, a.keyErr = nil, ""
 	a.page = pageSettings
 }
 

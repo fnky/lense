@@ -78,7 +78,11 @@ opens. Opened at login, it stays in the menu bar.
 
 The keys act where Quick Access is: on the search results, on the fields
 of the item chosen, or on the vaults. Change any of them in Settings, the
-shortcut that shows Lense included.
+shortcut that shows Lense included: click a key, or + for another, and press
+the new one with its modifiers. A popover shows the modifiers as you hold
+them, the key in green as it's set, or why it can't be, as a letter without
+⌘, ⌃ or ⌥; the key keeps what it had till then. Escape keeps it, Delete
+takes it out.
 
 | Search results | |
 |---|---|

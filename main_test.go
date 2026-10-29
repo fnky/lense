@@ -876,24 +876,49 @@ func TestSettings(t *testing.T) {
 		"Keyboard shortcuts", "Copy the username", "⌘C", "⌘B", "Search My Vault")
 	snapshot(t, h.tt, "settings")
 
-	// The global shortcut, recorded.
+	// The global shortcut, recorded in a popover by its key, which shows
+	// the key it has till it takes another.
 	h.click("Show Lense key")
-	if h.a.recordID != "show" {
-		t.Fatalf("recording %q", h.a.recordID)
+	if h.a.rec == nil || h.a.rec.id != "show" {
+		t.Fatalf("recording %+v", h.a.rec)
 	}
-	h.key(ui.Cmd|ui.Alt, ui.KeyK)
-	if h.a.cfg.Shortcut != "Option+Cmd+K" || h.a.recordID != "" {
+	h.has("⇧⌘Space", "e.g.", "Recording…")
+	h.tt.HoldModifiers(ui.Alt | ui.Cmd)
+	h.settle()
+	h.has("⌥", "⌘", "Recording…")
+	snapshot(t, h.tt, "settings-recording")
+	h.key(ui.Alt|ui.Cmd, ui.KeyK)
+	if h.a.cfg.Shortcut != "Option+Cmd+K" {
 		t.Fatalf("shortcut %q", h.a.cfg.Shortcut)
 	}
-	h.has("⌥⌘K")
+	h.has("⌥⌘K", "K", "New hotkey is set!")
+	snapshot(t, h.tt, "settings-recorded")
+	h.tt.HoldModifiers(0)
+	// It shows a second, then goes.
+	at := h.a.now()
+	h.a.now = func() time.Time { return at.Add(time.Second) }
+	h.settle()
+	if h.a.rec != nil || h.tt.HasText("New hotkey is set!") {
+		t.Fatalf("still recording %+v", h.a.rec)
+	}
+	h.a.now = func() time.Time { return at }
+
+	// A key another app has, or one without a modifier, it refuses,
+	// keeping the one it had, till Escape.
 	h.a.setShortcut = func(string) error { return errors.New("taken") }
 	h.click("Show Lense key")
 	h.key(ui.Cmd, ui.KeyJ)
 	if h.a.cfg.Shortcut != "Option+Cmd+K" {
 		t.Errorf("a taken shortcut was saved")
 	}
-	h.has("⌘J is taken by another app. Try another.")
+	h.has("⌘J is taken by another app. Try another.", "⌥⌘K")
+	h.key(0, ui.KeyJ)
+	h.has("J", "At least one modifier should be included in a hotkey.")
+	snapshot(t, h.tt, "settings-refused")
 	h.key(0, ui.KeyEscape) // stops recording
+	if h.a.rec != nil || h.a.cfg.Shortcut != "Option+Cmd+K" {
+		t.Fatalf("recording %+v, shortcut %q", h.a.rec, h.a.cfg.Shortcut)
+	}
 	h.key(0, ui.KeyEscape) // leaves the settings
 	if h.a.page != pageItems {
 		t.Errorf("page %v", h.a.page)
@@ -907,10 +932,10 @@ func TestCustomKeys(t *testing.T) {
 	h.key(ui.Cmd, ui.KeyComma)
 
 	// Another key for copying the password, which Shift-Cmd-C still does.
-	h.a.recordID, h.a.recordIndex = "copy-password", 1
+	h.a.startRecording("copy-password", 1, true)
 	h.settle()
 	h.key(ui.Cmd, ui.KeyP)
-	if got := h.a.cfg.keysOf("copy-password"); len(got) != 2 || got[1] == "" {
+	if got := h.a.cfg.keysOf("copy-password"); !slices.Equal(got, []string{"Shift+Cmd+C", "Cmd+P"}) {
 		t.Fatalf("keys %q", got)
 	}
 	// A key that another action does is refused.
@@ -919,18 +944,43 @@ func TestCustomKeys(t *testing.T) {
 	h.has("⌘O already does “Open the item in a window”.")
 	h.key(0, ui.KeyEscape)
 	// Delete takes a key out.
-	h.a.recordID, h.a.recordIndex = "copy-username", 1
+	h.a.startRecording("copy-username", 1, false)
 	h.settle()
 	h.key(0, ui.KeyBackspace)
 	if got := h.a.cfg.keysOf("copy-username"); len(got) != 1 || got[0] != "Cmd+C" {
 		t.Fatalf("keys %q", got)
 	}
-	// Letters need a modifier: they type into the search.
-	h.a.recordID, h.a.recordIndex = "lock", 0
+	// Letters need a modifier: they type into the search; Shift types
+	// them too.
+	h.a.startRecording("lock", 0, false)
 	h.settle()
 	h.key(0, ui.KeyQ)
-	h.has("Hold ⌘, ⌃ or ⌥ with that key.")
+	h.has("At least one modifier should be included in a hotkey.")
+	h.key(ui.Shift, ui.KeyQ)
+	h.has("⇧", "Q", "At least one modifier besides ⇧ should be included in this hotkey.")
 	h.key(0, ui.KeyEscape)
+	if got := h.a.cfg.keysOf("lock"); !slices.Equal(got, []string{"Cmd+L"}) {
+		t.Fatalf("keys %q", got)
+	}
+	// Tab is recorded, not moving the focus.
+	h.a.startRecording("details", 0, false)
+	h.settle()
+	h.key(0, ui.KeyTab)
+	h.has("⇥ already does “Finish the filter”.")
+	// The close button keeps the key.
+	h.click("Stop recording")
+	if h.a.rec != nil || !slices.Equal(h.a.cfg.keysOf("details"), []string{"Right"}) {
+		t.Fatalf("recording %+v, keys %q", h.a.rec, h.a.cfg.keysOf("details"))
+	}
+	// The arrows need none.
+	h.a.startRecording("previous", 0, false)
+	h.settle()
+	h.key(0, ui.KeyPageUp)
+	if got := h.a.cfg.keysOf("previous"); !slices.Equal(got, []string{"PageUp"}) {
+		t.Fatalf("keys %q", got)
+	}
+	h.a.rec = nil
+	h.settle()
 
 	h.key(0, ui.KeyEscape)
 	h.tt.Type("git")

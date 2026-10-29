@@ -295,12 +295,11 @@ type app struct {
 	applyMaterial func()
 	applyCapture  func()
 
-	// Settings: the key of an action being recorded, by its ID, and which
-	// of its keys (one past them to add one).
-	recordID    string
-	recordIndex int
-	keyErr      string
-	keyErrID    string
+	// Settings: the recorder of a key of an action, while it records, and
+	// what went wrong with the keys of an action otherwise.
+	rec      *recorder
+	keyErr   string
+	keyErrID string
 
 	// exit quits the app, and relaunch restarts it.
 	exit     func()
@@ -1181,8 +1180,8 @@ func (a *app) escape() {
 		a.closeFillMenu()
 	case a.page == pageAcknowledgements:
 		a.page = pageSettings
-	case a.page == pageSettings && a.recordID != "":
-		a.recordID = ""
+	case a.page == pageSettings && a.rec != nil:
+		a.rec = nil
 	case a.page == pageSettings && a.configured():
 		a.page = pageItems
 	case a.page == pageSetup && a.configured():

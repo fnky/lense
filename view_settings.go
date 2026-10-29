@@ -17,7 +17,7 @@ func (a *app) settingsView(c *ui.Context, k ink) {
 	a.dragHandle(ui.Row(c).Height(48).Padding(0, 12).Gap(8).AlignItems(ui.Center).
 		BorderWidth(0, 0, 1, 0).BorderColor(k.line)).Children(func() {
 		if a.configured() {
-			letThrough(textButton(c.Key("back"), k, "Done", iconBack)).OnClick(func() { a.recordID = ""; a.page = pageItems })
+			letThrough(textButton(c.Key("back"), k, "Done", iconBack)).OnClick(func() { a.rec = nil; a.page = pageItems })
 		}
 		ui.Text(c, "Settings").FontSize(14).FontWeight(650).Grow(1).TextAlign(ui.Center).Margin(0, 60, 0, 0)
 	})
