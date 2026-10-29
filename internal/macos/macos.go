@@ -110,3 +110,33 @@ const BitwardenBundleID = "com.bitwarden.desktop"
 // AccessibilitySettingsURL opens the pane of System Settings that lets
 // apps control the computer.
 const AccessibilitySettingsURL = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+
+// browsers are the browsers whose address AppleScript tells, and how.
+var browsers = map[string]string{
+	"com.apple.Safari":                    "safari",
+	"com.apple.SafariTechnologyPreview":   "safari",
+	"com.google.Chrome":                   "chrome",
+	"com.google.Chrome.beta":              "chrome",
+	"com.google.Chrome.dev":               "chrome",
+	"com.google.Chrome.canary":            "chrome",
+	"org.chromium.Chromium":               "chrome",
+	"com.brave.Browser":                   "chrome",
+	"com.brave.Browser.beta":              "chrome",
+	"com.microsoft.edgemac":               "chrome",
+	"com.microsoft.edgemac.Beta":          "chrome",
+	"com.microsoft.edgemac.Dev":           "chrome",
+	"com.vivaldi.Vivaldi":                 "chrome",
+	"com.operasoftware.Opera":             "chrome",
+	"company.thebrowser.Browser":          "chrome",
+	"company.thebrowser.dia":              "chrome",
+	"org.mozilla.firefox":                 "",
+	"org.mozilla.firefoxdeveloperedition": "",
+	"app.zen-browser.zen":                 "",
+	"com.kagi.kagimacOS":                  "safari",
+}
+
+// IsBrowser reports whether the app of bundleID is a web browser.
+func IsBrowser(bundleID string) bool {
+	_, ok := browsers[bundleID]
+	return ok
+}
