@@ -13,6 +13,10 @@ const (
 	windowHeight = 480
 	listWidth    = 296
 	radius       = 16
+	// cornerInset keeps a scroll bar's thumb, 3 DIPs in from the right,
+	// clear of the window's rounded bottom corner: where the corner's
+	// curve is 3 DIPs in, and the thumb's 2 DIPs in from its track's end.
+	cornerInset = 9
 )
 
 // ink is the window's colors, from the theme, with Bitwarden's blue.

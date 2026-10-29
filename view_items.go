@@ -578,7 +578,7 @@ func (a *app) details(c *ui.Context, k ink, it *bw.Item, own bool) {
 	b.show(it.ID)
 	view := a.stretchy(ui.Scroll(c.Key("detail-"+it.ID)).Fill(), b)
 	off := b.offset(c)
-	b.barInsets(view, 0, 0, bottom-16, 0)
+	b.barInsets(view, 0, 0, max(bottom-16, cornerInset), 0)
 	view.Children(func() {
 		ui.Column(c).Padding(18, 18, bottom, 18).Gap(16).Translate(0, off).Children(func() {
 			ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {

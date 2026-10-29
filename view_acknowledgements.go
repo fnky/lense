@@ -22,7 +22,7 @@ func (a *app) acknowledgementsView(c *ui.Context, k ink) {
 	})
 	view := a.stretchy(ui.Scroll(c.Key("acknowledgements")).Grow(1), &a.thanksBand)
 	off := a.thanksBand.offset(c)
-	a.thanksBand.barInsets(view, 0, 0, 0, 0)
+	a.thanksBand.barInsets(view, 0, 0, cornerInset, 0)
 	view.Children(func() {
 		ui.Column(c).Padding(18, 28, 22, 28).Gap(22).Translate(0, off).Children(func() {
 			section(c, k, "Bitwarden", func() {

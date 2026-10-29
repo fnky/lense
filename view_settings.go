@@ -23,7 +23,7 @@ func (a *app) settingsView(c *ui.Context, k ink) {
 	})
 	view := a.stretchy(ui.Scroll(c.Key("settings")).Grow(1), &a.settingsBand)
 	off := a.settingsBand.offset(c)
-	a.settingsBand.barInsets(view, 0, 0, 0, 0)
+	a.settingsBand.barInsets(view, 0, 0, cornerInset, 0)
 	view.Children(func() {
 		ui.Column(c).Padding(18, 28, 22, 28).Gap(22).Translate(0, off).Children(func() {
 			a.softwareUpdateSection(c.Key("update"), k)
