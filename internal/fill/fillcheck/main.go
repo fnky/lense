@@ -24,6 +24,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -31,6 +32,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -50,6 +52,11 @@ var cases = []struct {
 	alone bool
 	// open fills as Open and Fill does, opening the page first.
 	open bool
+	// elsewhere is a page of no website of the login's.
+	elsewhere bool
+	// refused is why nothing is to be typed: a fill of no field, a page of
+	// another site or a frame.
+	refused string
 }{
 	{name: "plain", body: `<form><input id=login_field name=login data-user autofocus><input id=password name=password type=password data-pass><button>Sign in</button></form>`},
 	{name: "link", body: `<form><input name=user data-user autofocus><a href="#">Forgot your username?</a><input type=password data-pass></form>`},
@@ -69,13 +76,22 @@ document.addEventListener('input', () => {
 <script>
 document.addEventListener('keydown', () => { const end = performance.now() + 20; while (performance.now() < end) {} }, true)
 </script>`},
-	{name: "late", body: `<form><input name=user data-user autofocus><button type=button>Next</button><input type=password data-pass hidden></form>
+	{name: "late", body: `<form><input name=user placeholder="Email or phone" data-user autofocus><button type=button>Next</button><input type=password data-pass hidden></form>
 <script>
 document.querySelector('[data-user]').addEventListener('input', () => setTimeout(() => { document.querySelector('[data-pass]').hidden = false }, 300))
 </script>`},
-	{name: "twostep", body: `<form><input name=username data-user autofocus><button>Next</button></form>`, alone: true},
+	{name: "twostep", body: `<form><input id=username name=username data-user autofocus><button>Next</button></form>`, alone: true},
 	{name: "open", body: `<form><input id=login_field name=login data-user autofocus><input id=password name=password type=password data-pass></form>`, open: true},
+	// A website's home page, without a login form: its search field takes
+	// nothing.
+	{name: "nologin", body: `<header><input name=q data-user autofocus></header><nav><a href="#">Sign in</a></nav>`, refused: "field"},
+	{name: "wrongsite", body: `<form><input id=login_field name=login data-user autofocus><input id=password name=password type=password data-pass></form>`, elsewhere: true, refused: "page"},
+	// A login form in a frame, as another site's on the page.
+	{name: "iframe", body: `<p>Sign in below.</p><iframe src="/frame/iframe" style="width: 480px; height: 160px"></iframe>`, refused: "frame"},
 }
+
+// frame is the login form of the frame of the iframe case.
+const frame = `<form><input id=login_field name=login data-user autofocus><input id=password name=password type=password data-pass></form>`
 
 // page wraps a form in a page that reports to the check as it loads, and
 // as its fields change.
@@ -140,6 +156,10 @@ func main() {
 			fmt.Fprintf(rw, page, c.name, c.body)
 		})
 	}
+	mux.HandleFunc("GET /frame/{case}", func(rw http.ResponseWriter, r *http.Request) {
+		rw.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprintf(rw, page, r.PathValue("case"), frame)
+	})
 	mux.HandleFunc("POST /report/{case}", func(rw http.ResponseWriter, r *http.Request) {
 		var rep report
 		json.NewDecoder(r.Body).Decode(&rep)
@@ -160,6 +180,7 @@ func main() {
 	}
 	go http.Serve(ln, mux)
 	base := "http://" + ln.Addr().String() + "/"
+	login.Matches = func(u string) bool { return strings.HasPrefix(u, base) }
 
 	openInDia := func(u string) { exec.Command("/usr/bin/open", "-b", dia, u).Run() }
 	kb := fill.Mac{Open: openInDia}
@@ -170,9 +191,13 @@ func main() {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		start := time.Now()
+		req := login
+		if c.elsewhere {
+			req.Matches = func(string) bool { return false }
+		}
 		var err error
 		if c.open {
-			err = fill.Fill(ctx, kb, macos.App{}, withPage(login, base+c.name))
+			err = fill.Fill(ctx, kb, macos.App{}, withPage(req, base+c.name))
 		} else {
 			openInDia(base + c.name)
 			for ctx.Err() == nil {
@@ -184,7 +209,7 @@ func main() {
 				}
 				time.Sleep(50 * time.Millisecond)
 			}
-			err = fill.Fill(ctx, kb, macos.FrontmostApp(), login)
+			err = fill.Fill(ctx, kb, macos.FrontmostApp(), req)
 		}
 		took := time.Since(start)
 		cancel()
@@ -196,8 +221,11 @@ func main() {
 		if c.alone {
 			want.Pass = ""
 		}
+		if c.refused != "" {
+			want = state{}
+		}
 		verdict := "ok"
-		if err != nil || got != want {
+		if got != want || !refusedAs(err, c.refused) {
 			verdict = "FAIL"
 			failed++
 		}
@@ -211,6 +239,21 @@ func main() {
 		fmt.Fprintln(w)
 	}
 	fmt.Fprintf(w, "%d of %d failed\n", failed, len(cases))
+}
+
+// refusedAs reports whether a fill ended as the case asks: with no error,
+// or refusing as it says.
+func refusedAs(err error, why string) bool {
+	var pe *fill.PageError
+	switch why {
+	case "field":
+		return errors.Is(err, fill.ErrNoField)
+	case "page":
+		return errors.As(err, &pe) && pe.URL != ""
+	case "frame":
+		return errors.Is(err, fill.ErrInFrame)
+	}
+	return err == nil
 }
 
 func withPage(r fill.Request, page string) fill.Request {
