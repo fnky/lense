@@ -7,7 +7,7 @@ tool github.com/egoist/mygo/cmd/mygo
 require (
 	github.com/awnumar/memguard v0.23.0
 	github.com/ebitengine/purego v0.11.1
-	github.com/egoist/mygo v0.7.1
+	github.com/egoist/mygo v0.7.3
 	golang.org/x/crypto v0.58.0
 )
 
