@@ -1,0 +1,219 @@
+// Command fillcheck checks filling in a browser, Dia: it serves login
+// forms that are hard to fill, fills each as Lense does, and reports what
+// each form took. It types into the browser, which needs Accessibility:
+// macOS gives it to an app of its own, which keeps it across builds when
+// signed with a certificate.
+//
+//	app="build/Lense Fill Check.app" plist="build/Lense Fill Check.app/Contents/Info.plist"
+//	go build -o "$app/Contents/MacOS/fillcheck" ./internal/fill/fillcheck
+//	plutil -create xml1 "$plist"
+//	for kv in CFBundleInfoDictionaryVersion=6.0 CFBundlePackageType=APPL CFBundleIdentifier=io.cbp.lense.fillcheck \
+//		"CFBundleName=Lense Fill Check" CFBundleExecutable=fillcheck CFBundleShortVersionString=1.0 CFBundleVersion=1; do
+//		plutil -insert "${kv%%=*}" -string "${kv#*=}" "$plist"
+//	done
+//	plutil -insert LSUIElement -bool true "$plist"
+//	codesign -f -s "Developer ID Application" "$app"
+//	open -W "$app" --args -out build/fillcheck.txt; cat build/fillcheck.txt
+//
+// System Settings lists it under Accessibility as it asks, and only as an
+// app: the package type and versions, outside a temporary folder. It
+// waits for the user to allow it, then opens a tab in Dia for each form:
+// leave the keyboard alone while it types.
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"os"
+	"os/exec"
+	"sync"
+	"time"
+
+	"lense/internal/fill"
+	"lense/internal/macos"
+)
+
+const dia = "company.thebrowser.dia"
+
+var login = fill.Request{Username: "ada@example.com", Password: "S3cret-pässwörd!"}
+
+// cases are the forms: the page reports what the fields marked data-user
+// and data-pass hold.
+var cases = []struct {
+	name, body string
+	// alone is a form that asks for the username alone.
+	alone bool
+	// open fills as Open and Fill does, opening the page first.
+	open bool
+}{
+	{name: "plain", body: `<form><input id=login_field name=login data-user autofocus><input id=password name=password type=password data-pass><button>Sign in</button></form>`},
+	{name: "link", body: `<form><input name=user data-user autofocus><a href="#">Forgot your username?</a><input type=password data-pass></form>`},
+	{name: "nofocus", body: `<header><input name=q placeholder=Search></header><form><input name=email placeholder="Email address" data-user><input type=password data-pass></form>`},
+	{name: "redraw", body: `<form id=f><input name=user data-user autofocus><input type=password data-pass></form>
+<script>
+// As a page's framework takes over its form: the first key goes to the
+// form it replaces.
+let drawn = false
+document.addEventListener('input', () => {
+	if (drawn) return
+	drawn = true
+	setTimeout(() => { document.getElementById('f').innerHTML = '<input name=user data-user><input type=password data-pass>' }, 30)
+}, true)
+</script>`},
+	{name: "slow", body: `<form><input name=user data-user autofocus><input type=password data-pass></form>
+<script>
+document.addEventListener('keydown', () => { const end = performance.now() + 20; while (performance.now() < end) {} }, true)
+</script>`},
+	{name: "late", body: `<form><input name=user data-user autofocus><button type=button>Next</button><input type=password data-pass hidden></form>
+<script>
+document.querySelector('[data-user]').addEventListener('input', () => setTimeout(() => { document.querySelector('[data-pass]').hidden = false }, 300))
+</script>`},
+	{name: "twostep", body: `<form><input name=username data-user autofocus><button>Next</button></form>`, alone: true},
+	{name: "open", body: `<form><input id=login_field name=login data-user autofocus><input id=password name=password type=password data-pass></form>`, open: true},
+}
+
+// page wraps a form in a page that reports to the check as it loads, and
+// as its fields change.
+const page = `<!doctype html><meta charset=utf-8><title>%[1]s</title>
+<body style="font: 16px system-ui; padding: 40px">
+<h1>%[1]s</h1>
+%[2]s
+<script>
+// Numbered, as reports may arrive out of turn.
+let seq = 0
+const report = () => {
+	const v = s => (document.querySelector(s) || {}).value || ''
+	fetch('/report/%[1]s', {method: 'POST', body: JSON.stringify({seq: ++seq, user: v('[data-user]'), pass: v('[data-pass]')})})
+}
+document.addEventListener('input', report, true)
+addEventListener('load', () => setTimeout(() => fetch('/ready/%[1]s', {method: 'POST'}), 100))
+</script>`
+
+type state struct {
+	User, Pass string
+}
+
+// report is what a page reports its fields hold, in turn.
+type report struct {
+	Seq int
+	state
+}
+
+func main() {
+	out := flag.String("out", "", "where to write the results")
+	only := flag.String("only", "", "the form to fill alone, as slow")
+	flag.Parse()
+	w := io.Writer(os.Stdout)
+	if *out != "" {
+		f, err := os.Create(*out)
+		if err != nil {
+			panic(err)
+		}
+		defer f.Close()
+		w = io.MultiWriter(os.Stdout, f)
+	}
+	if !macos.Trusted(true) {
+		// macOS lists the app as it asks, and only while it runs: wait for
+		// the user to allow it, then for them to leave System Settings.
+		deadline := time.Now().Add(5 * time.Minute)
+		for !macos.Trusted(false) {
+			if time.Now().After(deadline) {
+				fmt.Fprintln(w, "needs Accessibility: allow Lense Fill Check in System Settings, and run it again")
+				return
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+		time.Sleep(5 * time.Second)
+	}
+
+	var mu sync.Mutex
+	reports, ready := map[string]report{}, map[string]bool{}
+	mux := http.NewServeMux()
+	for _, c := range cases {
+		mux.HandleFunc("GET /"+c.name, func(rw http.ResponseWriter, r *http.Request) {
+			rw.Header().Set("Content-Type", "text/html; charset=utf-8")
+			fmt.Fprintf(rw, page, c.name, c.body)
+		})
+	}
+	mux.HandleFunc("POST /report/{case}", func(rw http.ResponseWriter, r *http.Request) {
+		var rep report
+		json.NewDecoder(r.Body).Decode(&rep)
+		mu.Lock()
+		if c := r.PathValue("case"); rep.Seq > reports[c].Seq {
+			reports[c] = rep
+		}
+		mu.Unlock()
+	})
+	mux.HandleFunc("POST /ready/{case}", func(rw http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		ready[r.PathValue("case")] = true
+		mu.Unlock()
+	})
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		panic(err)
+	}
+	go http.Serve(ln, mux)
+	base := "http://" + ln.Addr().String() + "/"
+
+	openInDia := func(u string) { exec.Command("/usr/bin/open", "-b", dia, u).Run() }
+	kb := fill.Mac{Open: openInDia}
+	failed := 0
+	for _, c := range cases {
+		if *only != "" && c.name != *only {
+			continue
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		start := time.Now()
+		var err error
+		if c.open {
+			err = fill.Fill(ctx, kb, macos.App{}, withPage(login, base+c.name))
+		} else {
+			openInDia(base + c.name)
+			for ctx.Err() == nil {
+				mu.Lock()
+				r := ready[c.name]
+				mu.Unlock()
+				if r && macos.FrontmostApp().BundleID == dia {
+					break
+				}
+				time.Sleep(50 * time.Millisecond)
+			}
+			err = fill.Fill(ctx, kb, macos.FrontmostApp(), login)
+		}
+		took := time.Since(start)
+		cancel()
+		time.Sleep(700 * time.Millisecond) // for the page's last report
+		mu.Lock()
+		got := reports[c.name].state
+		mu.Unlock()
+		want := state{User: login.Username, Pass: login.Password}
+		if c.alone {
+			want.Pass = ""
+		}
+		verdict := "ok"
+		if err != nil || got != want {
+			verdict = "FAIL"
+			failed++
+		}
+		fmt.Fprintf(w, "%-8s %-4s %5.2fs  user %q, password %d of %d characters", c.name, verdict, took.Seconds(), got.User, len([]rune(got.Pass)), len([]rune(want.Pass)))
+		if err != nil {
+			fmt.Fprintf(w, ", %v", err)
+		}
+		if got.Pass != want.Pass {
+			fmt.Fprintf(w, ", password %q", got.Pass) // the check's own, not a secret
+		}
+		fmt.Fprintln(w)
+	}
+	fmt.Fprintf(w, "%d of %d failed\n", failed, len(cases))
+}
+
+func withPage(r fill.Request, page string) fill.Request {
+	r.Page = page
+	return r
+}
