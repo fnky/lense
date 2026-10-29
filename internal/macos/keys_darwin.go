@@ -38,23 +38,6 @@ func copyAttr(el uintptr, name string) uintptr {
 	return out
 }
 
-// FocusedField returns the kind of the element with the keyboard focus in
-// the frontmost app: FieldPassword, FieldText, or FieldNone for anything
-// else, as a button or a page's body.
-func FocusedField() FieldKind {
-	if load() != nil {
-		return FieldNone
-	}
-	kind := FieldNone
-	withPool(func() {
-		if sys := axCreateSystemWide(); sys != 0 {
-			kind = focusedKind(sys)
-			cfRelease(sys)
-		}
-	})
-	return kind
-}
-
 // FocusedFieldOf returns the kind of the element that has the keyboard
 // focus in an app, or would have as it comes to the front.
 func FocusedFieldOf(pid int) FieldKind {
@@ -79,15 +62,14 @@ func focusedKind(of uintptr) FieldKind {
 		return FieldNone
 	}
 	defer cfRelease(el)
-	role, subrole := "", ""
-	if r := copyAttr(el, "AXRole"); r != 0 {
-		role = goString(objc.ID(r))
-		cfRelease(r)
-	}
-	if r := copyAttr(el, "AXSubrole"); r != 0 {
-		subrole = goString(objc.ID(r))
-		cfRelease(r)
-	}
+	return kindOf(el)
+}
+
+// kindOf returns the kind of an accessibility element: FieldPassword,
+// FieldText, or FieldNone for anything else, as a button or a page's
+// body.
+func kindOf(el uintptr) FieldKind {
+	role, subrole := stringAttr(el, "AXRole"), stringAttr(el, "AXSubrole")
 	// Login forms have fields of one line: a search field, or a text area
 	// as a terminal's or an editor's, is no place for a username.
 	switch {
@@ -126,18 +108,24 @@ const (
 	KeyReturn uint16 = 36
 )
 
-// PressKey presses and releases a key, without modifiers.
-func PressKey(code uint16) { press(code, 0) }
+// The keys typed come from a source of their own, apart from the keys the
+// user holds (kCGEventSourceStatePrivate), and go to the app of pid
+// alone: none lands in another that comes to the front meanwhile.
+const privateSource = -1
 
-// SelectAll presses Command-A, which selects what the focused field holds,
-// for typing over it.
-func SelectAll() { press(0, 1<<20) } // kVK_ANSI_A, kCGEventFlagMaskCommand
+// PressKey presses and releases a key, without modifiers, in the app of
+// pid.
+func PressKey(pid int, code uint16) { press(pid, code, 0) }
 
-func press(code uint16, flags uint64) {
-	if load() != nil {
+// SelectAll presses Command-A in the app of pid, which selects what its
+// focused field holds, for typing over it.
+func SelectAll(pid int) { press(pid, 0, 1<<20) } // kVK_ANSI_A, kCGEventFlagMaskCommand
+
+func press(pid int, code uint16, flags uint64) {
+	if load() != nil || pid <= 0 {
 		return
 	}
-	src := cgEventSourceCreate(1) // kCGEventSourceStateHIDSystemState
+	src := cgEventSourceCreate(privateSource)
 	if src != 0 {
 		defer cfRelease(src)
 	}
@@ -147,19 +135,19 @@ func press(code uint16, flags uint64) {
 			return
 		}
 		cgEventSetFlags(ev, flags)
-		cgEventPost(0, ev) // kCGHIDEventTap
+		cgEventPostToPid(int32(pid), ev)
 		cfRelease(ev)
 	}
 	time.Sleep(12 * time.Millisecond)
 }
 
-// TypeText types text into the frontmost app, as the keyboard would,
-// whatever its layout.
-func TypeText(text string) {
-	if load() != nil {
+// TypeText types text into the app of pid, as the keyboard would,
+// whatever its layout, pausing between the characters.
+func TypeText(pid int, text string, pause time.Duration) {
+	if load() != nil || pid <= 0 {
 		return
 	}
-	src := cgEventSourceCreate(1)
+	src := cgEventSourceCreate(privateSource)
 	if src != 0 {
 		defer cfRelease(src)
 	}
@@ -172,10 +160,19 @@ func TypeText(text string) {
 			}
 			cgEventSetFlags(ev, 0)
 			cgEventKeyboardSetUnicodeString(ev, uint64(len(units)), &units[0])
-			cgEventPost(0, ev)
+			cgEventPostToPid(int32(pid), ev)
 			cfRelease(ev)
 		}
-		// Some fields drop keys that come faster than people type.
-		time.Sleep(4 * time.Millisecond)
+		time.Sleep(pause)
 	}
+}
+
+// ModifiersHeld reports whether the user holds Shift, Control, Option or
+// Command down.
+func ModifiersHeld() bool {
+	if load() != nil {
+		return false
+	}
+	const mods = 1<<17 | 1<<18 | 1<<19 | 1<<20  // kCGEventFlagMaskShift … Command
+	return cgEventSourceFlagsState(1)&mods != 0 // kCGEventSourceStateHIDSystemState
 }

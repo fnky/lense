@@ -24,20 +24,23 @@ var (
 
 	cfRelease func(uintptr)
 	cfRetain  func(uintptr) uintptr
+	cfEqual   func(a, b uintptr) bool
 
 	// CoreGraphics
 	cgEventSourceCreate             func(state int32) uintptr
 	cgEventCreateKeyboardEvent      func(src uintptr, key uint16, down bool) uintptr
 	cgEventKeyboardSetUnicodeString func(ev uintptr, n uint64, chars *uint16)
 	cgEventSetFlags                 func(ev uintptr, flags uint64)
-	cgEventPost                     func(tap uint32, ev uintptr)
+	cgEventPostToPid                func(pid int32, ev uintptr)
+	cgEventSourceFlagsState         func(state int32) uint64
 
 	// Accessibility
 	axIsProcessTrustedWithOptions func(opts uintptr) bool
-	axCreateSystemWide            func() uintptr
 	axCreateApplication           func(pid int32) uintptr
 	axCopyAttributeValue          func(el uintptr, attr uintptr, out *uintptr) int32
+	axCopyParameterizedValue      func(el uintptr, attr uintptr, param uintptr, out *uintptr) int32
 	axSetAttributeValue           func(el uintptr, attr uintptr, value uintptr) int32
+	axValueGetValue               func(value uintptr, typ int32, out unsafe.Pointer) bool
 	axTrustedPromptKey            uintptr // kAXTrustedCheckOptionPrompt
 )
 
@@ -82,15 +85,18 @@ func load() error {
 		purego.RegisterLibFunc(&poolPop, objcLib, "objc_autoreleasePoolPop")
 		purego.RegisterLibFunc(&cfRelease, cf, "CFRelease")
 		purego.RegisterLibFunc(&cfRetain, cf, "CFRetain")
+		purego.RegisterLibFunc(&cfEqual, cf, "CFEqual")
 		purego.RegisterLibFunc(&cgEventSourceCreate, cg, "CGEventSourceCreate")
 		purego.RegisterLibFunc(&cgEventCreateKeyboardEvent, cg, "CGEventCreateKeyboardEvent")
 		purego.RegisterLibFunc(&cgEventKeyboardSetUnicodeString, cg, "CGEventKeyboardSetUnicodeString")
 		purego.RegisterLibFunc(&cgEventSetFlags, cg, "CGEventSetFlags")
-		purego.RegisterLibFunc(&cgEventPost, cg, "CGEventPost")
+		purego.RegisterLibFunc(&cgEventPostToPid, cg, "CGEventPostToPid")
+		purego.RegisterLibFunc(&cgEventSourceFlagsState, cg, "CGEventSourceFlagsState")
 		purego.RegisterLibFunc(&axIsProcessTrustedWithOptions, as, "AXIsProcessTrustedWithOptions")
-		purego.RegisterLibFunc(&axCreateSystemWide, as, "AXUIElementCreateSystemWide")
 		purego.RegisterLibFunc(&axCreateApplication, as, "AXUIElementCreateApplication")
 		purego.RegisterLibFunc(&axCopyAttributeValue, as, "AXUIElementCopyAttributeValue")
+		purego.RegisterLibFunc(&axCopyParameterizedValue, as, "AXUIElementCopyParameterizedAttributeValue")
+		purego.RegisterLibFunc(&axValueGetValue, as, "AXValueGetValue")
 		purego.RegisterLibFunc(&axSetAttributeValue, as, "AXUIElementSetAttributeValue")
 		if p, err := purego.Dlsym(as, "kAXTrustedCheckOptionPrompt"); err == nil {
 			axTrustedPromptKey = *(*uintptr)(cptr(p))

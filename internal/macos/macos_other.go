@@ -5,33 +5,45 @@ package macos
 import (
 	"context"
 	"errors"
+	"time"
 )
 
 // Elsewhere than macOS, nothing of this exists: the app builds, for tests,
 // and does without.
 
-func BiometricsAvailable() bool                      { return false }
-func Authenticate(reason, fallback string) error     { return ErrBiometricsUnavailable }
-func FrontmostApp() App                              { return App{} }
-func Activate(pid int) bool                          { return false }
-func IsRunning(bundleID string) bool                 { return false }
-func IsInstalled(bundleID string) bool               { return false }
-func OpenApp(bundleID string, urls ...string) error  { return errors.ErrUnsupported }
-func DefaultBrowser() string                         { return "" }
-func LaunchHidden(bundleID string) error             { return errors.ErrUnsupported }
-func IsBrowser(bundleID string) bool                 { return false }
-func Trusted(prompt bool) bool                       { return false }
-func FocusedField() FieldKind                        { return FieldNone }
-func FocusedFieldOf(pid int) FieldKind               { return FieldNone }
-func EnableWebAccessibility(pid int)                 {}
-func PressKey(code uint16)                           {}
-func SelectAll()                                     {}
-func OwnPID() int                                    { return 0 }
-func RoundMaterial(nsWindow uintptr, radius float64) {}
-func TypeText(text string)                           {}
-func CopySecret(text string, concealed bool) int     { return -1 }
-func ClearIfUnchanged(count int) bool                { return false }
-func ScrollPhase() (phase, momentum Phase)           { return 0, 0 }
+func BiometricsAvailable() bool                          { return false }
+func Authenticate(reason, fallback string) error         { return ErrBiometricsUnavailable }
+func FrontmostApp() App                                  { return App{} }
+func Activate(pid int) bool                              { return false }
+func IsRunning(bundleID string) bool                     { return false }
+func IsInstalled(bundleID string) bool                   { return false }
+func OpenApp(bundleID string, urls ...string) error      { return errors.ErrUnsupported }
+func DefaultBrowser() string                             { return "" }
+func LaunchHidden(bundleID string) error                 { return errors.ErrUnsupported }
+func IsBrowser(bundleID string) bool                     { return false }
+func Trusted(prompt bool) bool                           { return false }
+func FocusedFieldOf(pid int) FieldKind                   { return FieldNone }
+func EnableWebAccessibility(pid int)                     {}
+func PressKey(pid int, code uint16)                      {}
+func SelectAll(pid int)                                  {}
+func OwnPID() int                                        { return 0 }
+func RoundMaterial(nsWindow uintptr, radius float64)     {}
+func TypeText(pid int, text string, pause time.Duration) {}
+func ModifiersHeld() bool                                { return false }
+func FocusedElement(pid int) *Element                    { return nil }
+func TextFields(pid int, near *Element) []*Element       { return nil }
+func PageLoaded(pid int) (loaded, known bool)            { return false, false }
+func (e *Element) Same(o *Element) bool                  { return false }
+func (e *Element) Kind() FieldKind                       { return FieldNone }
+func (e *Element) Value() string                         { return "" }
+func (e *Element) Length() (int, bool)                   { return 0, false }
+func (e *Element) Selected() (int, bool)                 { return 0, false }
+func (e *Element) Hint() string                          { return "" }
+func (e *Element) OnPage() bool                          { return false }
+func (e *Element) Focus() bool                           { return false }
+func CopySecret(text string, concealed bool) int         { return -1 }
+func ClearIfUnchanged(count int) bool                    { return false }
+func ScrollPhase() (phase, momentum Phase)               { return 0, 0 }
 func BarMaterial(nsWindow uintptr, height, radius float64, material int) uintptr {
 	return 0
 }

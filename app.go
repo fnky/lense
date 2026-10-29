@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"lense/internal/bw"
+	"lense/internal/fill"
 	"lense/internal/ipc"
 	"lense/internal/macos"
 	"lense/internal/search"
@@ -89,9 +90,6 @@ type fillRequest struct {
 	username, password string
 	page               string // a page to open first, and fill once it shows
 }
-
-// errNoField means no field to fill had the keyboard focus.
-var errNoField = errors.New("no field to fill has the focus")
 
 type page int
 
@@ -1565,9 +1563,13 @@ func (a *app) fillInto(it *bw.Item, page string) {
 					if page != "" || where == "" {
 						where = "the page"
 					}
+					why := "No username or password field showed"
+					if errors.Is(err, fill.ErrNotTaken) {
+						why = "Not all of what Lense typed stayed in the fields"
+					}
 					a.prob = &problem{
 						title:  "Couldn't fill " + where,
-						detail: fmt.Sprintf("No username or password field had the keyboard focus. The password of %s is on the clipboard: click the field and paste it.", name),
+						detail: fmt.Sprintf("%s. The password of %s is on the clipboard: click the field and paste it.", why, name),
 					}
 					a.sys.show()
 					return

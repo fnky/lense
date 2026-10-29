@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"lense/internal/bw"
+	"lense/internal/fill"
 	"lense/internal/ipc"
 	"lense/internal/macos"
 
@@ -622,7 +623,8 @@ func (m macSealed) release() { m.s.Release() }
 func (m *macSystem) trusted(prompt bool) bool { return macos.Trusted(prompt) }
 
 func (m *macSystem) fill(ctx context.Context, target macos.App, req fillRequest) error {
-	return fillInto(ctx, target, req, func(u string) { mygo.Shell.OpenExternal(u) })
+	kb := fill.Mac{Open: func(u string) { mygo.Shell.OpenExternal(u) }}
+	return fill.Fill(ctx, kb, target, fill.Request{Username: req.username, Password: req.password, Page: req.page})
 }
 
 // fieldFocused reports whether a text field has the focus in the app,

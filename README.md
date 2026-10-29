@@ -150,8 +150,9 @@ Filters combine with words and with each other, and complete as you type `=`.
 
 ### Permissions
 
-- **Accessibility**, to fill other apps: Lense types into the field with the
-  keyboard focus, and only into text fields of one line.
+- **Accessibility**, to fill other apps: Lense types into text fields of one
+  line, the one with the keyboard focus, or a page's login form, and checks
+  that each field took what it typed before it goes on to the next.
 - **Automation** of your browser, to read the page it shows, for suggestions.
   Safari and Chromium browsers tell it; Firefox doesn't.
 

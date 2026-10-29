@@ -17,6 +17,7 @@ import (
 
 	"lense/internal/bw"
 	"lense/internal/bw/bwtest"
+	"lense/internal/fill"
 	"lense/internal/ipc"
 	"lense/internal/macos"
 
@@ -768,7 +769,7 @@ func TestFillNeedsAccessibility(t *testing.T) {
 func TestFillFails(t *testing.T) {
 	h := newHarness(t, nil, true)
 	h.unlock()
-	h.sys.fillErr = errNoField
+	h.sys.fillErr = fill.ErrNoField
 	h.a.front = front{app: macos.App{PID: 42, Name: "Safari", BundleID: "com.apple.Safari"}, url: "https://github.com/login"}
 	h.tt.Type("git")
 	h.settle()

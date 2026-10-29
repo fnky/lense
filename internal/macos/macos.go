@@ -21,6 +21,10 @@ const (
 	FieldPassword
 )
 
+// Element is an element of another app as accessibility shows it, as a
+// field of a page: the app keeps it while the Element lives.
+type Element struct{ ref uintptr }
+
 // Phase is where a gesture on the trackpad is, as AppKit's NSEventPhase.
 type Phase uint
 
