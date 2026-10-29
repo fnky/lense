@@ -396,6 +396,10 @@ func (a *app) defaultAction(it *bw.Item) {
 		}
 		return
 	}
+	if a.fillsForm(it) {
+		a.fillInto(it, "")
+		return
+	}
 	if f, ok := primary(it); ok {
 		a.copyField(it, f)
 		return
@@ -403,9 +407,21 @@ func (a *app) defaultAction(it *bw.Item) {
 	a.say("%s has nothing to copy", it.Name)
 }
 
+// fillsForm reports whether Return fills a card's or an identity's fields
+// of the page the user was on, as the page has them.
+func (a *app) fillsForm(it *bw.Item) bool {
+	return macos.IsBrowser(a.front.app.BundleID) && (it.Card != nil && a.front.cards || it.Identity != nil && a.front.identities)
+}
+
 // returnLabel says what Return does to it, for the footer, or "".
 func (a *app) returnLabel(it *bw.Item) string {
+	if a.fillsForm(it) {
+		return "Fill in " + a.front.app.Name
+	}
 	if it.Login == nil || it.Login.Password.Empty() {
+		if f, ok := primary(it); ok && (it.Card != nil || it.Identity != nil) {
+			return "Copy " + f.label
+		}
 		return ""
 	}
 	if name := a.fillTarget(it); name != "" && (a.onSite(it) || launchURL(it) == "") {

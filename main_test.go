@@ -120,8 +120,11 @@ type fakeSystem struct {
 	trust      bool
 	field      bool   // a text field has the focus in the app the user was in
 	browser    string // the browser that websites open in
-	drags      []dragPhase
-	pageURLs   map[string]string
+	// cards and identities are whether the browser's page has a card's
+	// fields, and an identity's.
+	cards, identities bool
+	drags             []dragPhase
+	pageURLs          map[string]string
 	// phase and momentum are those of the scrolling, none by default.
 	phase, momentum macos.Phase
 	// closed is told the window closed, as hide closes it.
@@ -188,6 +191,7 @@ func (s *fakeSystem) fill(_ context.Context, _ macos.App, req fillRequest) error
 func (s *fakeSystem) pageURL(_ context.Context, b macos.App) string { return s.pageURLs[b.BundleID] }
 func (s *fakeSystem) fieldFocused(macos.App) bool                   { return s.field }
 func (s *fakeSystem) defaultBrowser() string                        { return s.browser }
+func (s *fakeSystem) pageForms(macos.App) (bool, bool)              { return s.cards, s.identities }
 func (s *fakeSystem) secureInput(on bool)                           { s.secure = append(s.secure, on) }
 func (s *fakeSystem) drag(p dragPhase)                              { s.drags = append(s.drags, p) }
 func (s *fakeSystem) scrollPhase() (macos.Phase, macos.Phase)       { return s.phase, s.momentum }
@@ -1231,6 +1235,67 @@ func TestFillingSettings(t *testing.T) {
 	h.key(ui.Shift, ui.KeyEnter)
 	if code, _, _ := h.a.code(h.a.selected()); h.sys.last() != code {
 		t.Errorf("copied %q, not the code", h.sys.copied)
+	}
+}
+
+func TestFillsCardsAndIdentities(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.unlock()
+	safari := macos.App{PID: 7, Name: "Safari", BundleID: "com.apple.Safari"}
+	h.sys.pageURLs = map[string]string{"com.apple.Safari": "https://shop.example/checkout"}
+	h.sys.cards = true
+	h.a.setFront(safari)
+	h.settle()
+	h.tt.Type("visa")
+	h.settle()
+	// A page with a card's fields: Return fills them, on that page alone.
+	h.has("Fill in Safari")
+	h.key(0, ui.KeyEnter)
+	if len(h.sys.filled) != 1 {
+		t.Fatalf("filled %v", h.sys.filled)
+	}
+	r := h.sys.filled[0]
+	if c := r.card; c == nil || c.Number != "4111111111111111" || c.Code != "123" || c.Name != "Ada Lovelace" || c.ExpMonth != "8" || c.ExpYear != "2029" {
+		t.Errorf("card %+v", r.card)
+	}
+	if r.origin != "https://shop.example" || !r.matches("https://shop.example/pay") || r.username != "" || r.password != "" {
+		t.Errorf("filled %+v", r)
+	}
+	// One without: Return copies its number, as it said.
+	h.sys.cards = false
+	h.a.setFront(safari)
+	h.settle()
+	h.has("Copy card number")
+	h.key(0, ui.KeyEnter)
+	if len(h.sys.filled) != 1 || h.sys.last() != "4111111111111111" {
+		t.Fatalf("filled %v, copied %q", h.sys.filled, h.sys.copied)
+	}
+
+	// An identity's fields.
+	h.sys.identities = true
+	h.a.setFront(safari)
+	h.settle()
+	for range "visa" {
+		h.key(0, ui.KeyBackspace)
+	}
+	h.tt.Type("lovelace")
+	h.settle()
+	for h.a.selected() != nil && h.a.selected().Identity == nil {
+		h.key(0, ui.KeyDown)
+	}
+	h.a.flash = "" // what was copied, which the footer shows over its keys
+	h.settle()
+	h.has("Fill in Safari")
+	h.key(0, ui.KeyEnter)
+	if len(h.sys.filled) != 2 || h.sys.filled[1].identity == nil || h.sys.filled[1].identity.First != "Ada" || h.sys.filled[1].identity.Email != "ada@example.com" {
+		t.Fatalf("filled %+v", h.sys.filled)
+	}
+	// A browser in front, or not, an app's own fields get no card.
+	h.sys.identities = false
+	h.a.setFront(macos.App{PID: 9, Name: "Notes", BundleID: "com.apple.Notes"})
+	h.settle()
+	if h.a.fillsForm(h.a.selected()) {
+		t.Error("fills an app's fields with an identity")
 	}
 }
 

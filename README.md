@@ -84,7 +84,7 @@ shortcut that shows Lense included.
 |---|---|
 | ↑ ↓ | Choose an item |
 | → | Go to the item's fields (at the end of the search) |
-| ↩ | Fill the login into the page you came from, when it is one of its websites, or the app it is for; else open its website and fill it, or choose one of several. A login without a website fills the browser you came from, or the app with a login field focused, or else copies the password. On a filter, finish it |
+| ↩ | Fill the login into the page you came from, when it is one of its websites, or the app it is for; else open its website and fill it, or choose one of several. A login without a website fills the app you came from, where a login field has the focus, or else copies the password. On a card or an identity, fill the page's fields of one, where the page you came from has them, as Bitwarden's browser extension does; else copy its number or email. On a filter, finish it |
 | ⇥ | Finish the filter chosen |
 
 | Item fields | |
@@ -167,7 +167,12 @@ Filters combine with words and with each other, and complete as you type `=`.
   newsletter; and sets each value at once, as the page's input and change
   events tell it, then puts the focus on the password field. It fills only
   the pages of the login's websites, checked as it fills each field, never a
-  frame of the page, and only the browser in front. An app's own fields,
+  frame of the page, and only the browser in front. A card's or an
+  identity's fields Lense fills as the extension does too, by its words for
+  them: a card's name, number, expiration, as its placeholder shows it, and
+  code; an identity's name, address, state and country, as their codes, and
+  the rest; a menu, as of a month, chosen as you would, typing its start.
+  Those it fills only on the page you came from. An app's own fields,
   which tell less, Lense types into: the one with the keyboard focus, then,
   with Tab, the password's. It checks that each field took what it was
   given before it goes on to the next.

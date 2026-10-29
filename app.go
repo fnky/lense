@@ -64,6 +64,9 @@ type system interface {
 	// defaultBrowser names the browser that websites open in, as
 	// "Safari", or "".
 	defaultBrowser() string
+	// pageForms reports whether the page a browser shows has a card's
+	// fields, and an identity's: run it in the background.
+	pageForms(browser macos.App) (cards, identities bool)
 	show()
 	hide()
 	openDetail(id string)
@@ -97,6 +100,10 @@ type fillRequest struct {
 	origin string
 	// totp is the login's one-time password as the fill begins, or "".
 	totp string
+	// card and identity fill a page's fields of a card's, or an
+	// identity's, in place of a login's.
+	card     *fill.Card
+	identity *fill.Identity
 }
 
 type page int
@@ -121,6 +128,9 @@ type problem struct {
 type front struct {
 	app macos.App
 	url string // the page shown, when it is a browser
+	// cards and identities are whether the page has a card's fields, or
+	// an identity's, which Return fills of one.
+	cards, identities bool
 }
 
 // row is a row of the list: a section's header, an item, or a filter
@@ -1534,7 +1544,7 @@ func (a *app) chooseMenu(i int) {
 // fillInto types the login into page, which it opens first, or into the
 // app the user was in without one.
 func (a *app) fillInto(it *bw.Item, page string) {
-	if it == nil || it.Login == nil {
+	if it == nil || it.Login == nil && it.Card == nil && it.Identity == nil {
 		return
 	}
 	a.guarded(it, func() {
@@ -1556,37 +1566,26 @@ func (a *app) fillInto(it *bw.Item, page string) {
 			return
 		}
 		target := a.front.app
-		l := *it.Login
-		password, err := l.Password.Reveal()
+		req, err := a.fillRequestOf(it, page)
 		if err != nil {
-			a.say("Couldn't decrypt the password of %s", it.Name)
+			a.say("Couldn't decrypt %s", it.Name)
 			return
 		}
 		name, id := it.Name, it.ID
 		a.filling = true
 		a.sys.hide()
-		code, _, hasCode := a.code(it)
-		totpCode := ""
-		if hasCode {
-			totpCode = code
-		}
-		var origin string
-		if page == "" && macos.IsBrowser(target.BundleID) {
-			origin = fill.Origin(a.front.url)
-		}
-		def := a.cfg.URIMatch // as the fill runs elsewhere
-		matches := func(url string) bool {
-			for _, u := range l.URIs {
-				if search.MatchesPage(u, url, def) {
-					return true
-				}
-			}
-			return false
+		code, hasCode := req.totp, req.totp != ""
+		form := "No login form showed."
+		switch {
+		case it.Card != nil:
+			form = "No fields of a card showed."
+		case it.Identity != nil:
+			form = "No fields of an identity showed."
 		}
 		a.spawn(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
-			err := a.sys.fill(ctx, target, fillRequest{username: l.Username, password: password, page: page, matches: matches, origin: origin, totp: totpCode})
+			err := a.sys.fill(ctx, target, req)
 			a.post(func() {
 				a.filling = false
 				var pe *fill.PageError
@@ -1620,9 +1619,13 @@ func (a *app) fillInto(it *bw.Item, page string) {
 					a.sys.show()
 					return
 				case errors.Is(err, fill.ErrInFrame):
+					what := "login form"
+					if it.Login == nil {
+						what = "form"
+					}
 					a.prob = &problem{
 						title:  "Didn't fill the page",
-						detail: "The login form is in a frame of the page, as another website's would be, and Lense fills no frames.",
+						detail: fmt.Sprintf("The %s is in a frame of the page, as another website's would be, and Lense fills no frames.", what),
 					}
 					a.sys.show()
 					return
@@ -1633,7 +1636,7 @@ func (a *app) fillInto(it *bw.Item, page string) {
 					if page != "" || where == "" {
 						where = "the page"
 					}
-					detail := "No login form showed."
+					detail := form
 					if errors.Is(err, fill.ErrNotTaken) {
 						detail = "Not all of what Lense filled stayed in the fields."
 					}
@@ -1657,6 +1660,62 @@ func (a *app) fillInto(it *bw.Item, page string) {
 			})
 		})
 	})
+}
+
+// fillRequestOf returns what fills an item into the page or the app the
+// user was in, or into the page it opens: a login's username and password,
+// its one-time password, the pages it may fill; or a card's or an
+// identity's fields, which fill the page the user was on. Its secrets are
+// decrypted now, as it fills.
+func (a *app) fillRequestOf(it *bw.Item, page string) (fillRequest, error) {
+	req := fillRequest{page: page}
+	if page == "" && macos.IsBrowser(a.front.app.BundleID) {
+		req.origin = fill.Origin(a.front.url)
+	}
+	anyPage := func(string) bool { return true }
+	switch {
+	case it.Login != nil:
+		l := *it.Login
+		password, err := l.Password.Reveal()
+		if err != nil {
+			return req, err
+		}
+		req.username, req.password = l.Username, password
+		if code, _, ok := a.code(it); ok {
+			req.totp = code
+		}
+		def := a.cfg.URIMatch // as the fill runs elsewhere
+		req.matches = func(url string) bool {
+			for _, u := range l.URIs {
+				if search.MatchesPage(u, url, def) {
+					return true
+				}
+			}
+			return false
+		}
+	case it.Card != nil:
+		c := it.Card
+		number, err := c.Number.Reveal()
+		if err != nil {
+			return req, err
+		}
+		code, err := c.Code.Reveal()
+		if err != nil {
+			return req, err
+		}
+		req.card = &fill.Card{Name: c.CardholderName, Number: number, Brand: c.Brand, ExpMonth: c.ExpMonth, ExpYear: c.ExpYear, Code: code}
+		req.matches = anyPage
+	case it.Identity != nil:
+		i := it.Identity
+		req.identity = &fill.Identity{
+			Title: i.Title, First: i.FirstName, Middle: i.MiddleName, Last: i.LastName,
+			Address1: i.Address1, Address2: i.Address2, Address3: i.Address3,
+			City: i.City, State: i.State, PostalCode: i.PostalCode, Country: i.Country,
+			Company: i.Company, Email: i.Email, Phone: i.Phone, Username: i.Username,
+		}
+		req.matches = anyPage
+	}
+	return req, nil
 }
 
 // browserName names the browser a fill was for.
@@ -1707,11 +1766,12 @@ func (a *app) setFront(app macos.App) {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		u := a.sys.pageURL(ctx, app)
+		cards, identities := a.sys.pageForms(app)
 		a.post(func() {
 			if a.front.app.PID != app.PID || u == "" {
 				return
 			}
-			a.front.url = u
+			a.front.url, a.front.cards, a.front.identities = u, cards, identities
 			if a.unlocked() && a.query == "" {
 				a.rebuild(false)
 			} else {
