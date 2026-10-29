@@ -92,6 +92,9 @@ type fillRequest struct {
 	// matches reports whether a page is one of the login's websites,
 	// which a browser's must be to be filled.
 	matches func(url string) bool
+	// origin is the origin of the page the user was on, which a fill in
+	// place must stay on; "" for a page opened.
+	origin string
 }
 
 type page int
@@ -1555,6 +1558,10 @@ func (a *app) fillInto(it *bw.Item, page string) {
 		a.changed()
 		a.sys.hide()
 		code, _, hasCode := a.code(it)
+		var origin string
+		if page == "" && macos.IsBrowser(target.BundleID) {
+			origin = fill.Origin(a.front.url)
+		}
 		def := a.cfg.URIMatch // as the fill runs elsewhere
 		matches := func(url string) bool {
 			for _, u := range l.URIs {
@@ -1567,7 +1574,7 @@ func (a *app) fillInto(it *bw.Item, page string) {
 		a.spawn(func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
-			err := a.sys.fill(ctx, target, fillRequest{username: l.Username, password: password, page: page, matches: matches})
+			err := a.sys.fill(ctx, target, fillRequest{username: l.Username, password: password, page: page, matches: matches, origin: origin})
 			a.post(func() {
 				var pe *fill.PageError
 				switch {
@@ -1579,10 +1586,24 @@ func (a *app) fillInto(it *bw.Item, page string) {
 						browser = a.defaultBrowserName()
 					}
 					detail := fmt.Sprintf("%s doesn't tell Lense which page it shows, so Lense typed nothing there.", browser)
-					if pe.URL != "" {
+					switch {
+					case pe.Changed:
+						detail = fmt.Sprintf("The page went to %s as Lense filled it, so Lense typed no more.", search.Host(pe.URL))
+					case pe.URL != "":
 						detail = fmt.Sprintf("Lense fills only the websites of %s, and %s isn't one of them.", name, search.Host(pe.URL))
 					}
 					a.prob = &problem{title: "Didn't fill the page", detail: detail}
+					a.sys.show()
+					return
+				case errors.Is(err, fill.ErrNotInFront):
+					title, who := "Didn't fill the browser", "The browser"
+					if page == "" && target.Name != "" {
+						title, who = "Didn't fill "+target.Name, target.Name
+					}
+					a.prob = &problem{
+						title:  title,
+						detail: fmt.Sprintf("%s wasn't in front as Lense was about to type, so Lense typed no more: it types only where you're looking.", who),
+					}
 					a.sys.show()
 					return
 				case errors.Is(err, fill.ErrInFrame):

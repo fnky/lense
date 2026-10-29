@@ -22,6 +22,9 @@ func TestMain(m *testing.M) {
 // elements in the order of Tab, fields and others, as links.
 type page struct {
 	app macos.App
+	// away is whether another app is in front; awayOnTab brings one to
+	// the front as Tab is pressed.
+	away, awayOnTab bool
 	// url is the address of the page; "" for one the browser doesn't tell.
 	url      string
 	elements []*element
@@ -87,9 +90,14 @@ func (p *page) find(name string) *element {
 	return nil
 }
 
-func (p *page) Frontmost() macos.App { return p.app }
-func (p *page) Activate(int) bool    { return true }
-func (p *page) OpenURL(u string)     { p.typed = append(p.typed, "open "+u) }
+func (p *page) Frontmost() macos.App {
+	if p.away {
+		return macos.App{PID: 99, Name: "Mail", BundleID: "com.apple.mail"}
+	}
+	return p.app
+}
+func (p *page) Activate(int) bool { return true }
+func (p *page) OpenURL(u string)  { p.typed = append(p.typed, "open "+u) }
 func (p *page) BrowserURL(context.Context, string) (string, error) {
 	return p.url, nil
 }
@@ -135,6 +143,7 @@ func (p *page) TypeText(_ int, s string, _ time.Duration) {
 
 func (p *page) PressKey(_ int, code uint16) {
 	p.typed = append(p.typed, "tab")
+	p.away = p.away || p.awayOnTab
 	if code != macos.KeyTab {
 		return
 	}
@@ -557,4 +566,68 @@ func TestNotInFrames(t *testing.T) {
 		t.Errorf("a password field in a frame: %v", err)
 	}
 	p.holds(t, "user", "ada", "pass", "")
+}
+
+// anyOfExample matches every page of example.com's hosts.
+var anyOfExample = Request{Username: "ada", Password: "s3cret!", Matches: func(u string) bool {
+	return strings.HasPrefix(u, "https://example.com/") || strings.Contains(u, ".example.com/")
+}}
+
+func TestOnlyInFront(t *testing.T) {
+	// The app the user was in doesn't come back to the front.
+	p := newPage(true, text("user"), password("pass"))
+	p.focus, p.away = p.find("user"), true
+	if err := fill(t, p, login); !errors.Is(err, ErrNotInFront) {
+		t.Errorf("an app behind another: %v", err)
+	}
+	p.nothingTyped(t)
+	// Another comes to the front after the username: no Tab, no password.
+	p = newPage(true, text("user"), password("pass"))
+	p.focus = p.find("user")
+	p.onType = func(p *page, e *element) { p.away = true }
+	if err := fill(t, p, login); !errors.Is(err, ErrNotInFront) {
+		t.Errorf("an app gone behind another: %v", err)
+	}
+	p.holds(t, "user", "ada", "pass", "")
+	if slices.Contains(p.typed, "tab") {
+		t.Errorf("pressed Tab in an app behind another: %q", p.typed)
+	}
+	// Another comes to the front as Tab goes to the password field.
+	p = newPage(true, text("user"), password("pass"))
+	p.focus, p.awayOnTab = p.find("user"), true
+	if err := fill(t, p, login); !errors.Is(err, ErrNotInFront) {
+		t.Errorf("an app gone behind another after Tab: %v", err)
+	}
+	p.holds(t, "user", "ada", "pass", "")
+}
+
+func TestStaysOnItsOrigin(t *testing.T) {
+	// After the username, the page goes to another host of its domain,
+	// which the login's websites match too.
+	p := newPage(true, text("user"), password("pass"))
+	p.focus, p.url = p.find("user"), "https://login.example.com/"
+	p.onType = func(p *page, e *element) { p.url = "https://evil.example.com/" }
+	var pe *PageError
+	if err := fill(t, p, anyOfExample); !errors.As(err, &pe) || !pe.Changed {
+		t.Errorf("another origin: %v", err)
+	}
+	p.holds(t, "user", "ada", "pass", "")
+}
+
+func TestFillsThePageTheUserWasOn(t *testing.T) {
+	req := anyOfExample
+	req.Origin = "https://example.com"
+	p := newPage(true, text("user"), password("pass"))
+	p.focus, p.url = p.find("user"), "https://login.example.com/"
+	var pe *PageError
+	if err := fill(t, p, req); !errors.As(err, &pe) || !pe.Changed {
+		t.Errorf("another page than the user's: %v", err)
+	}
+	p.nothingTyped(t)
+	p = newPage(true, text("user"), password("pass"))
+	p.focus, p.url = p.find("user"), "https://example.com/login"
+	if err := fill(t, p, req); err != nil {
+		t.Fatal(err)
+	}
+	p.holds(t, "user", "ada", "pass", "s3cret!")
 }

@@ -604,6 +604,10 @@ func TestSearchAndKeys(t *testing.T) {
 	if len(h.sys.filled) != 1 || h.sys.filled[0].username != "ada" || h.sys.filled[0].password != "gh-s3cret!" || h.sys.filled[0].page != "" {
 		t.Fatalf("filled %+v", h.sys.filled)
 	}
+	// It fills only the page the user was on.
+	if h.sys.filled[0].origin != "https://github.com" {
+		t.Errorf("origin %q", h.sys.filled[0].origin)
+	}
 	// Shift-Return opens its website, and fills it.
 	h.key(ui.Shift, ui.KeyEnter)
 	if len(h.sys.filled) != 2 || h.sys.filled[1].page != "https://github.com/login" {
@@ -1141,12 +1145,14 @@ func TestFillsOnlyTheLoginsPages(t *testing.T) {
 		&fill.PageError{URL: "https://example.net/login"}: "Lense fills only the websites of Tracker, and example.net isn't one of them.",
 		&fill.PageError{}: "The browser doesn't tell Lense which page it shows, so Lense typed nothing there.",
 		fill.ErrInFrame:   "The login form is in a frame of the page, as another website's would be, and Lense fills no frames.",
+		&fill.PageError{URL: "https://evil.example.com/", Changed: true}: "The page went to evil.example.com as Lense filled it, so Lense typed no more.",
+		fill.ErrNotInFront: "The browser wasn't in front as Lense was about to type, so Lense typed no more: it types only where you're looking.",
 	} {
 		h.sys.fillErr, h.a.prob = err, nil
 		copied := len(h.sys.copied)
 		h.key(ui.Shift, ui.KeyEnter)
 		h.key(0, ui.KeyEnter)
-		h.has("Didn't fill the page", says)
+		h.has(says)
 		if len(h.sys.copied) != copied {
 			t.Errorf("%v: copied %q", err, h.sys.copied[copied:])
 		}

@@ -624,7 +624,7 @@ func (m *macSystem) trusted(prompt bool) bool { return macos.Trusted(prompt) }
 
 func (m *macSystem) fill(ctx context.Context, target macos.App, req fillRequest) error {
 	kb := fill.Mac{Open: func(u string) { mygo.Shell.OpenExternal(u) }}
-	return fill.Fill(ctx, kb, target, fill.Request{Username: req.username, Password: req.password, Page: req.page, Matches: req.matches})
+	return fill.Fill(ctx, kb, target, fill.Request{Username: req.username, Password: req.password, Page: req.page, Matches: req.matches, Origin: req.origin})
 }
 
 // fieldFocused reports whether a text field has the focus in the app,

@@ -8,6 +8,7 @@ package fill
 import (
 	"context"
 	"errors"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -25,6 +26,10 @@ type Request struct {
 	// Matches reports whether a page is one of the login's websites, as
 	// a browser's must be to be filled; nil matches none.
 	Matches func(url string) bool
+	// Origin is the origin a browser's page must show all through the
+	// fill, as "https://github.com" of the page the user was on; without
+	// it, the page's as the fill first types.
+	Origin string
 }
 
 var (
@@ -36,16 +41,26 @@ var (
 	// ErrInFrame means the login form is in a frame of the page, as
 	// another site's: a fill types into no frame.
 	ErrInFrame = errors.New("the login form is in a frame")
+	// ErrNotInFront means the app to fill wasn't in front as a key was to
+	// be typed: a fill types only where the user is looking.
+	ErrNotInFront = errors.New("the app to fill isn't in front")
 )
 
 // PageError means the login form is on a page that isn't one of the
-// login's websites, at URL, or on one the browser doesn't tell, "":
-// nothing is typed there.
-type PageError struct{ URL string }
+// login's websites, at URL, or on one the browser doesn't tell, "", or
+// that the page went elsewhere, Changed, from the origin the fill was
+// on: nothing is typed there.
+type PageError struct {
+	URL     string
+	Changed bool
+}
 
 func (e *PageError) Error() string {
-	if e.URL == "" {
+	switch {
+	case e.URL == "":
 		return "the browser doesn't tell which page it shows"
+	case e.Changed:
+		return "the page went elsewhere as it was filled: " + e.URL
 	}
 	return "the page isn't one of the login's websites: " + e.URL
 }
@@ -128,13 +143,15 @@ func Fill(ctx context.Context, kb Keyboard, target macos.App, req Request) error
 		front := func() bool { return kb.Frontmost().PID == target.PID }
 		if !waitFor(ctx, appWait, front) {
 			kb.Activate(target.PID)
-			waitFor(ctx, appWait, front)
+			if !waitFor(ctx, appWait, front) {
+				return ErrNotInFront
+			}
 		}
 	}
 	if target.PID == 0 {
 		return ErrNoField
 	}
-	f := filler{ctx: ctx, kb: kb, req: req, pid: target.PID, bundle: target.BundleID, browser: macos.IsBrowser(target.BundleID)}
+	f := &filler{ctx: ctx, kb: kb, req: req, pid: target.PID, bundle: target.BundleID, browser: macos.IsBrowser(target.BundleID), origin: req.Origin}
 	if f.browser {
 		kb.Prepare(f.pid)
 	}
@@ -150,7 +167,8 @@ func Fill(ctx context.Context, kb Keyboard, target macos.App, req Request) error
 	return err
 }
 
-// filler fills the app of pid.
+// filler fills the app of pid; origin is the origin of the page it
+// fills, once it is known.
 type filler struct {
 	ctx     context.Context
 	kb      Keyboard
@@ -158,9 +176,10 @@ type filler struct {
 	pid     int
 	bundle  string
 	browser bool
+	origin  string
 }
 
-func (f filler) fill(req Request, wait time.Duration) error {
+func (f *filler) fill(req Request, wait time.Duration) error {
 	user, pass, err := f.find(wait)
 	if err != nil {
 		return err
@@ -175,6 +194,9 @@ func (f filler) fill(req Request, wait time.Duration) error {
 		if err := f.typeInto(user, req.Username, false); err != nil {
 			return err
 		}
+		if f.kb.Frontmost().PID != f.pid {
+			return ErrNotInFront // as Tab is to go
+		}
 		pass = f.next(user, pass)
 	}
 	if pass == nil || req.Password == "" {
@@ -186,7 +208,7 @@ func (f filler) fill(req Request, wait time.Duration) error {
 
 // find finds the fields to fill, waiting for a page to load and show
 // them on one of the login's websites.
-func (f filler) find(wait time.Duration) (user, pass Field, err error) {
+func (f *filler) find(wait time.Duration) (user, pass Field, err error) {
 	deadline := time.Now().Add(wait)
 	err = ErrNoField
 	for {
@@ -196,9 +218,12 @@ func (f filler) find(wait time.Duration) (user, pass Field, err error) {
 				if field == nil {
 					field = pass
 				}
+				if !f.browser {
+					return user, pass, nil
+				}
 				// A page on its way to the login's, as through a redirect,
 				// may get there yet.
-				if err = f.onLoginPage(field); err == nil {
+				if _, err = f.onLogins(field); err == nil {
 					return user, pass, nil
 				}
 			}
@@ -212,7 +237,7 @@ func (f filler) find(wait time.Duration) (user, pass Field, err error) {
 
 // fields finds the fields to fill: in an app, the field with the focus;
 // on a page, the login form's, around the field with the focus.
-func (f filler) fields() (user, pass Field) {
+func (f *filler) fields() (user, pass Field) {
 	at := f.kb.Focused(f.pid)
 	if !f.browser {
 		switch kind(at) {
@@ -249,14 +274,11 @@ func (f filler) fields() (user, pass Field) {
 	return user, pass
 }
 
-// onLoginPage checks that a field a browser shows is on one of the
-// login's websites: nowhere else does a fill type.
-func (f filler) onLoginPage(field Field) error {
-	if !f.browser {
-		return nil
-	}
+// onLogins checks that a field a browser shows is on a page of one of the
+// login's websites, not in a frame of it, and returns the page's address.
+func (f *filler) onLogins(field Field) (string, error) {
 	if field.InFrame() {
-		return ErrInFrame
+		return "", ErrInFrame
 	}
 	u := field.PageURL()
 	if u == "" {
@@ -264,18 +286,53 @@ func (f filler) onLoginPage(field Field) error {
 	}
 	switch {
 	case u == "":
-		return &PageError{}
+		return "", &PageError{}
 	case f.req.Matches == nil || !f.req.Matches(u):
-		return &PageError{URL: u}
+		return u, &PageError{URL: u}
+	}
+	return u, nil
+}
+
+// commit checks, as keys are about to go to a field, what each key typed
+// needs, at that moment: the app in front, where the user is looking;
+// and in a browser, a page of the login's websites, not a frame of it, on
+// the origin the fill began on. A page may have gone elsewhere since the
+// fill began, as after the username, to another host of the domain.
+func (f *filler) commit(field Field) error {
+	if f.kb.Frontmost().PID != f.pid {
+		return ErrNotInFront
+	}
+	if !f.browser {
+		return nil
+	}
+	u, err := f.onLogins(field)
+	if err != nil {
+		return err
+	}
+	switch o := Origin(u); {
+	case f.origin == "":
+		f.origin = o
+	case o != f.origin:
+		return &PageError{URL: u, Changed: true}
 	}
 	return nil
+}
+
+// Origin returns the origin of a page's address: its scheme, host and
+// port, as "https://github.com".
+func Origin(page string) string {
+	u, err := url.Parse(page)
+	if err != nil {
+		return page
+	}
+	return strings.ToLower(u.Scheme + "://" + u.Host)
 }
 
 // next goes from the username's field to the password's, with Tab, as
 // the user would; where Tab goes elsewhere, as to a link, to the
 // password field of the form, which may show only once the username is
 // typed. It returns nil for a form that asks for the username alone.
-func (f filler) next(user, pass Field) Field {
+func (f *filler) next(user, pass Field) Field {
 	f.kb.PressKey(f.pid, macos.KeyTab)
 	waitFor(f.ctx, settle, func() bool {
 		at := f.kb.Focused(f.pid)
@@ -297,15 +354,13 @@ func (f filler) next(user, pass Field) Field {
 // typeInto types text over what the field holds, and waits for it to
 // hold it: a field that takes less, as one that drops keys, gets it once
 // more, typed slower.
-func (f filler) typeInto(field Field, text string, secret bool) error {
-	// The page may have gone elsewhere since: to another site, say, after
-	// the username.
-	if err := f.onLoginPage(field); err != nil {
-		return err
-	}
+func (f *filler) typeInto(field Field, text string, secret bool) error {
 	for _, pause := range []time.Duration{keyPause, slowPause} {
 		if !f.focus(field) {
 			return ErrNotTaken
+		}
+		if err := f.commit(field); err != nil {
+			return err
 		}
 		f.selectAll(field, secret)
 		f.kb.TypeText(f.pid, text, pause)
@@ -324,7 +379,7 @@ func (f filler) typeInto(field Field, text string, secret bool) error {
 // edit of the browser's, and a page busy with the keys before it would
 // take keys typed after it before it, and lose them to the selection.
 // A field that holds nothing needs none.
-func (f filler) selectAll(field Field, secret bool) {
+func (f *filler) selectAll(field Field, secret bool) {
 	n, known := field.Length()
 	if !known {
 		v := field.Value()
@@ -343,7 +398,7 @@ func (f filler) selectAll(field Field, secret bool) {
 }
 
 // focus gives the field the keyboard focus, and waits for it to have it.
-func (f filler) focus(field Field) bool {
+func (f *filler) focus(field Field) bool {
 	has := func() bool {
 		at := f.kb.Focused(f.pid)
 		return at != nil && at.Same(field)
