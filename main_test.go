@@ -602,9 +602,8 @@ func TestSearchAndKeys(t *testing.T) {
 	if len(h.sys.filled) != 1 || h.sys.filled[0].username != "ada" || h.sys.filled[0].password != "gh-s3cret!" || h.sys.filled[0].page != "" {
 		t.Fatalf("filled %+v", h.sys.filled)
 	}
-	// Shift-Return offers its websites to open, and fills the one chosen.
+	// Shift-Return opens its website, and fills it.
 	h.key(ui.Shift, ui.KeyEnter)
-	h.key(0, ui.KeyEnter)
 	if len(h.sys.filled) != 2 || h.sys.filled[1].page != "https://github.com/login" {
 		t.Fatalf("filled %+v", h.sys.filled)
 	}
@@ -758,9 +757,6 @@ func TestFillNeedsAccessibility(t *testing.T) {
 	h.a.front = front{app: macos.App{PID: 42, Name: "Slack"}}
 	h.tt.Type("git")
 	h.settle()
-	// Not where GitHub is for, Return offers its website, then Slack.
-	h.key(0, ui.KeyEnter)
-	h.key(0, ui.KeyDown)
 	h.key(0, ui.KeyEnter)
 	if len(h.sys.filled) != 0 {
 		t.Fatal("filled without access")
@@ -772,17 +768,15 @@ func TestFillNeedsAccessibility(t *testing.T) {
 func TestFillFails(t *testing.T) {
 	h := newHarness(t, nil, true)
 	h.unlock()
-	h.sys.fillErr, h.sys.field = errNoField, true
-	h.a.front = front{app: macos.App{PID: 42, Name: "Slack"}}
+	h.sys.fillErr = errNoField
+	h.a.front = front{app: macos.App{PID: 42, Name: "Safari", BundleID: "com.apple.Safari"}, url: "https://github.com/login"}
 	h.tt.Type("git")
 	h.settle()
-	h.key(0, ui.KeyEnter)
-	h.key(0, ui.KeyDown)
 	h.key(0, ui.KeyEnter)
 	if h.sys.shown != 1 || h.sys.last() != "gh-s3cret!" {
 		t.Fatalf("shown %d, copied %q", h.sys.shown, h.sys.copied)
 	}
-	h.has("Couldn't fill Slack")
+	h.has("Couldn't fill Safari")
 }
 
 func TestStoreChangesWhileUnlocked(t *testing.T) {
@@ -1089,6 +1083,20 @@ func TestOpenAndFillMenu(t *testing.T) {
 	h.click("tracker.example.com/login")
 	if len(h.sys.filled) != 3 || h.sys.filled[2].page != "https://tracker.example.com/login" {
 		t.Fatalf("filled %+v", h.sys.filled)
+	}
+}
+
+func TestOneWebsiteOpensAtOnce(t *testing.T) {
+	h := newHarness(t, nil, true)
+	h.unlock()
+	h.a.setFront(macos.App{PID: 42, Name: "Notes", BundleID: "com.apple.Notes"})
+	h.tt.Type("git")
+	h.settle()
+	// Of one website, the menu has nothing to choose from.
+	h.key(0, ui.KeyEnter)
+	h.key(ui.Shift, ui.KeyEnter)
+	if h.a.mode == modeFillMenu || len(h.sys.filled) != 2 || h.sys.filled[0].page != "https://github.com/login" || h.sys.filled[1].page != "https://github.com/login" {
+		t.Fatalf("mode %v, filled %+v", h.a.mode, h.sys.filled)
 	}
 }
 
@@ -1630,7 +1638,6 @@ func TestHidingForgetsWhatShowed(t *testing.T) {
 	// Filling hides the window, as going elsewhere does: what it revealed
 	// goes with it, what it showed stays for the next time.
 	h.key(ui.Shift, ui.KeyEnter)
-	h.key(0, ui.KeyEnter)
 	if h.sys.hidden != 1 || len(h.a.reveal) != 0 || len(h.a.reprompted) != 0 {
 		t.Fatalf("hidden %d, revealed %v, reprompted %v", h.sys.hidden, h.a.reveal, h.a.reprompted)
 	}

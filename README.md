@@ -84,7 +84,7 @@ shortcut that shows Lense included.
 |---|---|
 | ↑ ↓ | Choose an item |
 | → | Go to the item's fields (at the end of the search) |
-| ↩ | Fill the login into the page you came from, when it is one of its websites, or the app it is for; else choose one of its websites to open and fill. A login without a website fills the browser you came from, or the app with a login field focused, or else copies the password. On a filter, finish it |
+| ↩ | Fill the login into the page you came from, when it is one of its websites, or the app it is for; else open its website and fill it, or choose one of several. A login without a website fills the browser you came from, or the app with a login field focused, or else copies the password. On a filter, finish it |
 | ⇥ | Finish the filter chosen |
 
 | Item fields | |
@@ -100,7 +100,7 @@ shortcut that shows Lense included.
 | → ← | Show or hide what a vault holds; ← at the top goes back |
 | ↩ | Search it |
 
-| Open and Fill menu (↩, ⇧↩) | |
+| Open and Fill menu (↩, ⇧↩, for a login of several websites) | |
 |---|---|
 | ↑ ↓ | Choose a website of the login, or the app you came from |
 | ↩ | Open the website in your default browser and fill it, or fill the app |
@@ -112,7 +112,7 @@ shortcut that shows Lense included.
 | ⌘C, ⌘B | Copy the username (a card's number, an identity's email, a note) |
 | ⇧⌘C | Copy the password (a card's security code, a key's private half) |
 | ⌥⌘C | Copy the one-time password |
-| ⇧↩ | Choose one of the login's websites to open in your default browser, and fill it, even on one of them already; hold ⇧ to see it in the footer |
+| ⇧↩ | Open the login's website in your default browser, or choose one of several, and fill it, even on one of them already; hold ⇧ to see it in the footer |
 | ⌘1 … ⌘9 | Search All Vaults, My Vault, an organization, then folders and collections |
 | ⌘O | Open the item in a window of its own |
 | ⇧⌘O | Open Bitwarden |

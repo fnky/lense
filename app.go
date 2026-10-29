@@ -1480,14 +1480,19 @@ func (a *app) menuChoices(it *bw.Item) []menuChoice {
 	return out
 }
 
-// openFillMenu offers the websites of it to open and fill, the first
-// chosen, and with here, the app the user was in to fill too.
+// openFillMenu opens the website of it and fills it, or, of several,
+// offers them to open and fill, the first chosen, and with here, the app
+// the user was in to fill too.
 func (a *app) openFillMenu(it *bw.Item, here bool) {
 	if it == nil || it.Login == nil {
 		return
 	}
-	if launchURL(it) == "" {
+	switch pages := launchURLs(it); len(pages) {
+	case 0:
 		a.say("%s has no website to open", it.Name)
+		return
+	case 1:
+		a.fillInto(it, pages[0])
 		return
 	}
 	if a.mode != modeFillMenu {

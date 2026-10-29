@@ -378,8 +378,8 @@ func (a *app) jumpVault(n int) {
 
 // defaultAction is Return's: it fills a login where the user was when
 // that is where the login is for, a page of one of its websites or its
-// app, and else offers its websites to open and fill, in the Open and
-// Fill menu. A login without a website fills the app the user was in when
+// app, and else opens its website and fills it, or, of several, offers
+// them in the Open and Fill menu. A login without a website fills the app the user was in when
 // that app has a field to fill, as a browser's page, and copies its
 // password otherwise; the other items copy what they hold first.
 func (a *app) defaultAction(it *bw.Item) {
