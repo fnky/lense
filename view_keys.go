@@ -102,7 +102,7 @@ func (a *app) keyChip(c *ui.Context, k ink, act action, i int, label string) {
 		return false
 	})
 	b.Children(func() {
-		ui.Text(c, label).FontSize(12.5).FontWeight(600)
+		ui.Text(c, label).FontSize(11.5)
 	})
 	if recording {
 		a.recorderPopover(c.Key("recorder"), k, b)
