@@ -11,21 +11,20 @@ import (
 
 // band is the rubber band of a scroll view, as macOS's scroll views have:
 // scrolled on past an end of its content with the trackpad, the content
-// goes on, much less far, and goes back as the fingers lift; scrolling
-// that coasts on after they lift bounces off the end. MyGo's scroll views
-// stop at their ends: the view moves its content by the band's offset.
+// goes on, much less far; scrolled back, it comes back as fast as the view
+// scrolls, as in Finder, and goes back as the fingers lift; scrolling that
+// coasts on after they lift bounces off the end. MyGo's scroll views stop
+// at their ends: the view moves its content by the band's offset.
 type band struct {
 	// at is where the view shows its content (TrackScroll): at an end or
 	// not.
 	at ui.ScrollState
 	// id is what the view shows, the band of which it keeps.
 	id string
-	// pull is how far the fingers scrolled past an end: past the top when
-	// positive, which moves the content down, past the bottom when
-	// negative. caught is how far off its place the content was as the
-	// fingers caught it going back, in DIPs, on the same side: the fingers
-	// didn't stretch it so, and it goes back as fast as they scroll it.
-	pull, caught float32
+	// pull is how far the fingers hold the content off its place, in DIPs:
+	// past the top when positive, which moves the content down, past the
+	// bottom when negative.
+	pull float32
 	// held is whether the fingers hold the content stretched, and phased
 	// whether the events tell when they lift: without phases, they lift
 	// once none stretched it for releaseAfter, since stretched.
@@ -133,50 +132,34 @@ func (b *band) scroll(ev ui.InputEvent, top, end bool, phase, momentum macos.Pha
 		b.coasting = false
 		if b.going {
 			// The fingers catch the content going back, where it is.
-			b.going, b.held, b.pull, b.caught = false, b.off != 0, 0, b.off
+			b.going, b.held, b.pull = false, b.off != 0, b.off
 		}
 	}
 	if !b.held && !past {
 		return false
 	}
 	d := -ev.DY // down, past the top
-	if s := b.stretch(); s == 0 || d > 0 == (s > 0) {
-		b.pull += d // further from its place, by a twentieth
-	} else {
-		// Back toward its place: by what the fingers stretched it, as they
-		// did, then by where they caught it, as fast as they scroll; in its
-		// place, the view scrolls on from there.
-		b.pull, d = toward(b.pull, d)
-		b.caught, _ = toward(b.caught, d)
+	switch p := b.pull + d; {
+	case b.pull == 0 || d > 0 == (b.pull > 0):
+		b.pull += d * elasticity // further from its place, by a twentieth
+	case p == 0 || p > 0 != (b.pull > 0):
+		b.pull = 0 // back in its place: the view scrolls on from there
+	default:
+		b.pull = p // back toward it, as fast as the view scrolls
 	}
-	b.held, b.phased, b.stretched = b.stretch() != 0, phase != 0, ev.Time
+	b.held, b.phased, b.stretched = b.pull != 0, phase != 0, ev.Time
 	return true
 }
-
-// toward moves v by d toward 0, and returns it, and what is left of d
-// past 0, which v stays at.
-func toward(v, d float32) (float32, float32) {
-	if w := v + d; v != 0 && w != 0 && w > 0 != (v > 0) {
-		return 0, w
-	} else if v == 0 {
-		return 0, d
-	} else {
-		return w, 0
-	}
-}
-
-// stretch returns how far the fingers hold the content off its place.
-func (b *band) stretch() float32 { return b.pull*elasticity + b.caught }
 
 // goBack lets the content go back to its place from where it is, from at,
 // going away from it at vel DIPs a second.
 func (b *band) goBack(at time.Time, vel float32) {
 	from := b.off
 	if b.held {
-		from = b.stretch()
+		from = b.pull
 	}
 	b.going, b.from, b.vel, b.since = true, from, vel, at
-	b.held, b.pull, b.caught = false, 0, 0
+	b.held, b.pull = false, 0
 }
 
 // offset returns how far the content shows off its place in this frame,
@@ -193,7 +176,7 @@ func (b *band) offset(c *ui.Context) float32 {
 	}
 	switch {
 	case b.held:
-		b.off = b.stretch()
+		b.off = b.pull
 	case b.going:
 		t := now.Sub(b.since).Seconds()
 		b.off = rebound(b.from, b.vel, t)

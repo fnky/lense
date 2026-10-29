@@ -53,11 +53,12 @@ func TestBandStretchesPastTheEnds(t *testing.T) {
 	if b.scroll(pull(-30, t0), false, false, 0, 0) {
 		t.Fatal("stretched off the ends")
 	}
-	if !b.scroll(pull(-30, t0), true, false, 0, 0) || b.pull != 30 || !b.held {
+	if !b.scroll(pull(-300, t0), true, false, 0, 0) || !near(b.pull, 15) || !b.held {
 		t.Fatalf("past the top: pull %v, held %v", b.pull, b.held)
 	}
-	// Scrolling back lets the band go, down to its place, and no further.
-	if !b.scroll(pull(20, t0), true, false, 0, 0) || b.pull != 10 {
+	// Scrolling back brings it back as fast as the view scrolls, as in
+	// Finder, down to its place, and no further.
+	if !b.scroll(pull(10, t0), true, false, 0, 0) || !near(b.pull, 5) {
 		t.Fatalf("back: pull %v", b.pull)
 	}
 	if !b.scroll(pull(25, t0), true, false, 0, 0) || b.pull != 0 || b.held {
@@ -66,8 +67,11 @@ func TestBandStretchesPastTheEnds(t *testing.T) {
 	if b.scroll(pull(25, t0), true, false, 0, 0) {
 		t.Fatal("the view didn't scroll on")
 	}
-	if !b.scroll(pull(12, t0), false, true, 0, 0) || b.pull != -12 {
+	if !b.scroll(pull(120, t0), false, true, 0, 0) || !near(b.pull, -6) {
 		t.Fatalf("past the bottom: pull %v", b.pull)
+	}
+	if !b.scroll(pull(-4, t0), false, true, 0, 0) || !near(b.pull, -2) {
+		t.Fatalf("back from the bottom: pull %v", b.pull)
 	}
 }
 
@@ -77,7 +81,7 @@ func TestBandLetsGoAsTheFingersLift(t *testing.T) {
 	b.scroll(pull(0, t0), true, false, macos.PhaseMayBegin, 0)
 	b.scroll(pull(-100, t0), true, false, macos.PhaseBegan, 0)
 	b.scroll(pull(-300, t0), true, false, macos.PhaseChanged, 0)
-	if b.pull != 400 || !b.held || !b.phased {
+	if b.pull != 20 || !b.held || !b.phased {
 		t.Fatalf("pull %v, held %v", b.pull, b.held)
 	}
 	lift := t0.Add(time.Second)
@@ -106,8 +110,8 @@ func TestBandLetsGoAsTheFingersLift(t *testing.T) {
 	}
 	// The fingers catch it on the way, where it is.
 	b.scroll(pull(0, lift), true, false, macos.PhaseMayBegin, 0)
-	if !b.held || b.going || !near(b.stretch(), 12) {
-		t.Fatalf("caught: %v off, held %v", b.stretch(), b.held)
+	if !b.held || b.going || !near(b.pull, 12) {
+		t.Fatalf("caught: %v off, held %v", b.pull, b.held)
 	}
 }
 
@@ -118,21 +122,16 @@ func TestBandCaughtGoesBackAsFastAsScrolled(t *testing.T) {
 	b.scroll(pull(0, t0), true, false, macos.PhaseMayBegin, 0)
 	// Further from its place, by a twentieth of what is scrolled.
 	b.scroll(pull(-100, t0), true, false, macos.PhaseBegan, 0)
-	if !near(b.stretch(), 17) {
-		t.Fatalf("pulled further: %v off", b.stretch())
+	if !near(b.pull, 17) {
+		t.Fatalf("pulled further: %v off", b.pull)
 	}
-	// Back: what the fingers stretched it by as they did, then the rest as
-	// fast as they scroll, as the view scrolls.
-	b.scroll(pull(100, t0), true, false, macos.PhaseChanged, 0)
-	if !near(b.stretch(), 12) || !b.held {
-		t.Fatalf("back by what they pulled: %v off", b.stretch())
+	// Back as fast as the view scrolls.
+	b.scroll(pull(10, t0), true, false, macos.PhaseChanged, 0)
+	if !near(b.pull, 7) || !b.held {
+		t.Fatalf("back by 10: %v off, want 7", b.pull)
 	}
-	b.scroll(pull(5, t0), true, false, macos.PhaseChanged, 0)
-	if !near(b.stretch(), 7) {
-		t.Fatalf("back by 5: %v off, want 7", b.stretch())
-	}
-	if !b.scroll(pull(10, t0), true, false, macos.PhaseChanged, 0) || b.held || b.stretch() != 0 {
-		t.Fatalf("back in place: %v off, held %v", b.stretch(), b.held)
+	if !b.scroll(pull(10, t0), true, false, macos.PhaseChanged, 0) || b.held || b.pull != 0 {
+		t.Fatalf("back in place: %v off, held %v", b.pull, b.held)
 	}
 	if b.scroll(pull(10, t0), true, false, macos.PhaseChanged, 0) {
 		t.Fatal("the view didn't scroll on")
@@ -141,8 +140,8 @@ func TestBandCaughtGoesBackAsFastAsScrolled(t *testing.T) {
 	b = band{going: true, off: -12}
 	b.scroll(pull(0, t0), false, true, macos.PhaseBegan, 0)
 	b.scroll(pull(-12, t0), false, true, macos.PhaseChanged, 0)
-	if b.held || b.stretch() != 0 {
-		t.Fatalf("back from the bottom: %v off", b.stretch())
+	if b.held || b.pull != 0 {
+		t.Fatalf("back from the bottom: %v off", b.pull)
 	}
 }
 
