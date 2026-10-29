@@ -125,7 +125,8 @@ func (a *app) startRecording(id string, i int, adding bool) {
 
 // recorderPopover shows, by the key it records, what the recorder hears:
 // an example, the modifiers held, the key taken in green, or the key
-// refused with why in red. It takes the keys pressed while it shows.
+// refused with why in red. It takes the keys pressed while it shows. Its
+// width stays: what it says wraps, and it grows in height alone.
 func (a *app) recorderPopover(c *ui.Context, k ink, anchor ui.Element) {
 	r := a.rec
 	r.hold(c.Modifiers())
@@ -137,8 +138,8 @@ func (a *app) recorderPopover(c *ui.Context, k ink, anchor ui.Element) {
 	}
 	open := true
 	ui.PopoverBase(c, anchor, &open, func(panel ui.Element) {
-		panel.AttachTo(anchor, ui.AnchorTop, ui.AnchorBottom).Margin(0, 0, 10, 0).MinWidth(240).
-			Padding(16, 36, 14, 36).Gap(10).AlignItems(ui.Center).Radius(14).
+		panel.AttachTo(anchor, ui.AnchorTop, ui.AnchorBottom).Margin(0, 0, 10, 0).Width(recorderWidth).
+			Padding(14, 26, 12, 26).Gap(8).AlignItems(ui.Center).Radius(12).
 			Background(k.raised).Border(1, k.edge).Shadow(0, 10, 30, 0, ui.RGBA(0, 0, 0, 0.25)).
 			Focusable().Focus().HandleInput(func(ev ui.InputEvent) bool {
 			if ev.Kind != ui.InputKeyDown {
@@ -156,10 +157,10 @@ func (a *app) recorderPopover(c *ui.Context, k ink, anchor ui.Element) {
 				a.rec = nil
 			}
 		})
-		ui.Row(c).Gap(6).AlignItems(ui.Center).MinHeight(30).Children(func() {
+		ui.Row(c).Gap(5).AlignItems(ui.Center).MinHeight(22).Children(func() {
 			switch r.state {
 			case recListening:
-				ui.Text(c, "e.g.").FontSize(12.5).TextColor(k.faint).Margin(0, 2, 0, 0)
+				ui.Text(c, "e.g.").FontSize(11.5).TextColor(k.faint).Margin(0, 2, 0, 0)
 				for _, s := range keyCaps(ui.Shift|ui.Super, ui.KeySpace) {
 					keyCap(c, s, k.faint, k.line)
 				}
@@ -173,24 +174,28 @@ func (a *app) recorderPopover(c *ui.Context, k ink, anchor ui.Element) {
 				}
 			}
 		})
+		say, tone, weight := "Recording…", k.muted, 500
 		switch r.state {
 		case recAccepted:
-			ui.Text(c, "New hotkey is set!").FontSize(13).FontWeight(600).TextColor(k.okay)
+			say, tone, weight = "New hotkey is set!", k.okay, 600
 		case recRefused:
-			ui.Text(c, r.why).FontSize(12.5).TextColor(k.danger).TextAlign(ui.Center).MaxWidth(260)
-		default:
-			ui.Text(c, "Recording…").FontSize(13).FontWeight(500).TextColor(k.muted)
+			say, tone, weight = r.why, k.danger, 400
 		}
+		ui.Text(c, say).FontSize(11.5).FontWeight(weight).TextColor(tone).LineHeight(1.35).
+			TextAlign(ui.Center).AlignSelf(ui.Stretch)
 	})
 	if !open && a.rec == r {
 		a.rec = nil // Escape, or a press outside it
 	}
 }
 
+// recorderWidth is the width of the recorder's popover.
+const recorderWidth = 230
+
 // keyCap shows a key of a hotkey, as its cap.
 func keyCap(c *ui.Context, label string, text, cap ui.Color) {
-	ui.Box(c).MinWidth(30).Height(28).Padding(0, 8).Center().Radius(7).Background(cap).Children(func() {
-		ui.Text(c, label).FontSize(14).FontWeight(600).TextColor(text)
+	ui.Box(c).MinWidth(22).Height(22).Padding(0, 6).Center().Radius(5).Background(cap).Children(func() {
+		ui.Text(c, label).FontSize(11.5).FontWeight(600).TextColor(text)
 	})
 }
 
