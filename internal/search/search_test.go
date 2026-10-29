@@ -146,6 +146,24 @@ func TestMatchesPage(t *testing.T) {
 		{bw.URI{URI: `^https://.*\.corp\.com`, Match: m(search.MatchRegex)}, "https://wiki.corp.com", true},
 		{bw.URI{URI: "https://a.com", Match: m(search.MatchNever)}, "https://a.com", false},
 		{bw.URI{URI: "192.168.1.1"}, "http://192.168.1.1/admin", true},
+		// Domains of the Public Suffix List, its private ones included: the
+		// neighbors on github.io are other people's.
+		{bw.URI{URI: "https://alice.github.io/blog"}, "https://alice.github.io/login", true},
+		{bw.URI{URI: "https://alice.github.io"}, "https://mallory.github.io", false},
+		{bw.URI{URI: "https://shop.example.co.jp"}, "https://evil.co.jp", false},
+		{bw.URI{URI: "https://a.example.com.au"}, "https://b.example.com.au", true},
+		// Apps Script serves anyone's pages on google.com.
+		{bw.URI{URI: "https://accounts.google.com"}, "https://mail.google.com", true},
+		{bw.URI{URI: "https://accounts.google.com"}, "https://script.google.com/macros/s/x/exec", false},
+		// A unicode domain is its punycode, as browsers report it.
+		{bw.URI{URI: "https://münchen.de"}, "https://xn--mnchen-3ya.de/login", true},
+		{bw.URI{URI: "https://münchen.de", Match: m(search.MatchHost)}, "https://xn--mnchen-3ya.de/", true},
+		// A host is all of it, as Bitwarden compares them: "www." too, and
+		// a port, but for the scheme's own.
+		{bw.URI{URI: "https://example.com", Match: m(search.MatchHost)}, "https://www.example.com", false},
+		{bw.URI{URI: "https://example.com", Match: m(search.MatchHost)}, "https://EXAMPLE.com:443/x", true},
+		{bw.URI{URI: "https://example.com", Match: m(search.MatchHost)}, "https://example.com:8443/", false},
+		{bw.URI{URI: "example.com:8443", Match: m(search.MatchHost)}, "https://example.com:8443/", true},
 	} {
 		if got := search.MatchesPage(tc.uri, tc.page, search.MatchDomain); got != tc.want {
 			t.Errorf("%v on %s: %v", tc.uri.URI, tc.page, got)

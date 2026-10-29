@@ -1,7 +1,9 @@
 package search
 
 import (
+	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -166,7 +168,8 @@ func MatchesPage(u bw.URI, pageURL string, def int) bool {
 	}
 	switch match {
 	case MatchHost:
-		return Host(u.URI) == Host(pageURL) && port(u.URI) == port(pageURL)
+		h := hostPort(u.URI)
+		return h != "" && h == hostPort(pageURL)
 	case MatchStartsWith:
 		return strings.HasPrefix(pageURL, u.URI)
 	case MatchExact:
@@ -177,23 +180,60 @@ func MatchesPage(u bw.URI, pageURL string, def int) bool {
 	case MatchNever:
 		return false
 	}
-	h, p := Host(u.URI), Host(pageURL)
+	h, p := hostPort(u.URI), hostPort(pageURL)
 	if h == "" || p == "" {
 		return false
 	}
-	return BaseDomain(h) == BaseDomain(p)
+	domain := BaseDomain(hostname(h))
+	if domain != BaseDomain(hostname(p)) {
+		return false
+	}
+	// Hosts of a domain that serve other people's pages match no login
+	// of the domain.
+	return !slices.Contains(foreignHosts[domain], p)
 }
 
-func port(uri string) string {
+// foreignHosts are hosts of a domain that serve pages anyone makes, by the
+// domain, as Bitwarden's DomainMatchBlacklist has them: Apps Script's.
+var foreignHosts = map[string][]string{
+	"google.com": {"script.google.com"},
+}
+
+// hostPort returns the host of a URI as a URL's host has it, as Bitwarden
+// compares hosts: in lower case and punycode, "www." kept, with its port
+// unless the scheme's own; "" for none.
+func hostPort(uri string) string {
+	uri = strings.TrimSpace(uri)
+	if uri == "" {
+		return ""
+	}
 	if !strings.Contains(uri, "://") {
 		uri = "https://" + uri
 	}
-	_, rest, _ := strings.Cut(uri, "://")
-	hostport, _, _ := strings.Cut(rest, "/")
-	if i := strings.LastIndexByte(hostport, ':'); i >= 0 && !strings.Contains(hostport[i:], "]") {
-		return hostport[i+1:]
+	u, err := url.Parse(uri)
+	if err != nil || u.Hostname() == "" {
+		return ""
 	}
-	return ""
+	h := asciiHost(u.Hostname())
+	if strings.Contains(h, ":") {
+		h = "[" + h + "]" // an IPv6 address
+	}
+	switch p := u.Port(); {
+	case p == "", p == "443" && u.Scheme == "https", p == "80" && u.Scheme == "http":
+		return h
+	default:
+		return h + ":" + p
+	}
+}
+
+// hostname returns the host of a hostPort, without its port.
+func hostname(hostPort string) string {
+	if strings.HasPrefix(hostPort, "[") {
+		h, _, _ := strings.Cut(hostPort[1:], "]")
+		return h
+	}
+	h, _, _ := strings.Cut(hostPort, ":")
+	return h
 }
 
 // ForPage returns the logins for the page at pageURL, matching their

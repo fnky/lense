@@ -23,6 +23,9 @@ import (
 	"unicode"
 
 	"lense/internal/bw"
+
+	"golang.org/x/net/idna"
+	"golang.org/x/net/publicsuffix"
 )
 
 // Kind is the kind of a filter.
@@ -418,27 +421,29 @@ func Host(uri string) string {
 	return strings.TrimPrefix(h, "www.")
 }
 
-// BaseDomain returns the registrable domain of a host, roughly: its last
-// two labels, or three under the country codes that sell domains below a
-// second level (co.uk, com.au).
+// BaseDomain returns the registrable domain of a host, as the Public
+// Suffix List has it, its private part included, as Bitwarden reads it:
+// "example.co.uk" of www.example.co.uk, and "alice.github.io" of
+// alice.github.io, whose neighbors on github.io are other people's. A
+// unicode host gives its punycode, as browsers report it. An address, or
+// a host of one label, as localhost, is its own.
 func BaseDomain(host string) string {
-	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	host = asciiHost(host)
 	if net.ParseIP(host) != nil || !strings.Contains(host, ".") {
 		return host
 	}
-	labels := strings.Split(host, ".")
-	n := 2
-	if len(labels) >= 3 {
-		second := labels[len(labels)-2]
-		if len(labels[len(labels)-1]) == 2 && (len(second) <= 3 || second == "gov" || second == "ac") {
-			switch second {
-			case "co", "com", "net", "org", "gov", "ac", "edu", "ne", "or", "go":
-				n = 3
-			}
-		}
+	if d, err := publicsuffix.EffectiveTLDPlusOne(host); err == nil {
+		return d
 	}
-	if len(labels) < n {
-		return host
+	return host // a public suffix itself, as github.io
+}
+
+// asciiHost puts a host as URLs carry it: in lower case, its unicode
+// labels in punycode, without a final dot.
+func asciiHost(host string) string {
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
+	if a, err := idna.ToASCII(host); err == nil {
+		return a
 	}
-	return strings.Join(labels[len(labels)-n:], ".")
+	return host
 }
