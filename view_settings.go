@@ -26,6 +26,18 @@ func (a *app) settingsView(c *ui.Context, k ink) {
 	view.Children(func() {
 		ui.Column(c).Padding(18, 28, 22, 28).Gap(22).Translate(0, off).Children(func() {
 			a.softwareUpdateSection(c.Key("update"), k)
+			section(c, k, "General", func() {
+				atLogin := a.sys.openAtLogin()
+				switchRow(c.Key("login"), k, "Launch Lense at login", "It waits in the menu bar from then on, for its shortcut.", &atLogin, func() {
+					a.loginErr = ""
+					if err := a.sys.setOpenAtLogin(atLogin); err != nil {
+						a.loginErr = "macOS didn't let Lense change its login items: " + err.Error()
+					}
+				})
+				if a.loginErr != "" {
+					ui.Text(c, a.loginErr).FontSize(11.5).TextColor(k.danger).LineHeight(1.35)
+				}
+			})
 			section(c, k, "Account", func() {
 				settingRow(c, k, a.cfg.Email, a.accountStatus(), func() {
 					pushButton(c.Key("change"), k, "Change…", false).OnClick(a.startSetup)

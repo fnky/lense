@@ -697,6 +697,9 @@ func (u mygoUpdate) install(ctx context.Context, progress func(done, total int64
 	return u.up.Install(ctx, progress)
 }
 
+func (m *macSystem) openAtLogin() bool            { return mygo.App.OpenAtLogin() }
+func (m *macSystem) setOpenAtLogin(on bool) error { return mygo.App.SetOpenAtLogin(on) }
+
 func (m *macSystem) show()                { mygo.RunOnMain(m.s.show) }
 func (m *macSystem) hide()                { mygo.RunOnMain(m.s.hide) }
 func (m *macSystem) openDetail(id string) { mygo.RunOnMain(func() { m.s.openDetail(id) }) }

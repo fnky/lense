@@ -131,6 +131,11 @@ type fakeSystem struct {
 	closed func()
 	// secure is how Secure Event Input was turned, in turn.
 	secure []bool
+
+	// atLogin is whether the app opens at login, which loginErr keeps it
+	// from changing.
+	atLogin  bool
+	loginErr error
 }
 
 func (s *fakeSystem) copy(text string, secret bool) {
@@ -195,6 +200,16 @@ func (s *fakeSystem) pageForms(macos.App) (bool, bool)              { return s.c
 func (s *fakeSystem) secureInput(on bool)                           { s.secure = append(s.secure, on) }
 func (s *fakeSystem) drag(p dragPhase)                              { s.drags = append(s.drags, p) }
 func (s *fakeSystem) scrollPhase() (macos.Phase, macos.Phase)       { return s.phase, s.momentum }
+
+func (s *fakeSystem) openAtLogin() bool { return s.atLogin }
+
+func (s *fakeSystem) setOpenAtLogin(on bool) error {
+	if s.loginErr != nil {
+		return s.loginErr
+	}
+	s.atLogin = on
+	return nil
+}
 
 func (s *fakeSystem) last() string {
 	if len(s.copied) == 0 {
@@ -330,6 +345,18 @@ func (h *harness) rest(s string) ([]string, ui.Rect) {
 		}
 	}
 	return tips, r
+}
+
+// flip clicks the switch of the setting named label: at the end of its
+// row, beside its two lines.
+func (h *harness) flip(label string) {
+	h.t.Helper()
+	r, ok := h.tt.Find(label)
+	if !ok {
+		h.t.Fatalf("no setting %q in %q", label, h.tt.Texts())
+	}
+	h.tt.ClickAt(windowWidth-28-18, r.Y+17)
+	h.settle()
 }
 
 func (h *harness) key(mods ui.Modifiers, k ui.Key) {
@@ -876,6 +903,24 @@ func TestSettings(t *testing.T) {
 		"Keyboard shortcuts", "Copy the username", "⌘C", "⌘B", "Search My Vault")
 	snapshot(t, h.tt, "settings")
 
+	// Lense opens at login as the switch says, a login item of macOS's.
+	h.has("General", "Launch Lense at login")
+	h.flip("Launch Lense at login")
+	if !h.sys.atLogin {
+		t.Fatal("not opening at login")
+	}
+	h.sys.loginErr = errors.New("needs approval")
+	h.flip("Launch Lense at login")
+	if !h.sys.atLogin {
+		t.Error("a failed change changed it")
+	}
+	h.has("macOS didn't let Lense change its login items: needs approval")
+	h.sys.loginErr = nil
+	h.flip("Launch Lense at login")
+	if h.sys.atLogin || h.a.loginErr != "" {
+		t.Errorf("at login %v, %q", h.sys.atLogin, h.a.loginErr)
+	}
+
 	// The global shortcut, recorded in a popover by its key, which shows
 	// the key it has till it takes another.
 	h.click("Show Lense key")
@@ -1280,13 +1325,7 @@ func TestFillingSettings(t *testing.T) {
 
 	// The fill matches the pages it types into as the settings say, and
 	// copies no code after it, as they say too.
-	// The switch at the end of the setting's row, beside its two lines.
-	label, ok := h.tt.Find("Copy the one-time password")
-	if !ok {
-		t.Fatalf("no setting in %q", h.tt.Texts())
-	}
-	h.tt.ClickAt(windowWidth-28-18, label.Y+17)
-	h.settle()
+	h.flip("Copy the one-time password")
 	if h.a.cfg.CopyTOTP {
 		t.Fatal("the switch didn't turn copying codes off")
 	}
@@ -1925,13 +1964,7 @@ func TestTooltipsTurnOff(t *testing.T) {
 	h.a.saveCfg = func(c config) { saved = append(saved, c) }
 	h.tt.SetSize(windowWidth, 2400) // all of the settings, unscrolled
 	h.key(ui.Cmd, ui.KeyComma)
-	// The switch at the end of the setting's row, beside its two lines.
-	label, ok := h.tt.Find("Show tooltips")
-	if !ok {
-		t.Fatalf("no setting in %q", h.tt.Texts())
-	}
-	h.tt.ClickAt(windowWidth-28-18, label.Y+17)
-	h.settle()
+	h.flip("Show tooltips")
 	if h.a.cfg.Tooltips || len(saved) != 1 || saved[0].Tooltips {
 		t.Fatalf("tooltips %v, saved %+v", h.a.cfg.Tooltips, saved)
 	}
@@ -2110,12 +2143,7 @@ func TestScreenCaptureIsAllowedInTheSettings(t *testing.T) {
 	h.a.applyCapture = func() { applied++ }
 	h.tt.SetSize(windowWidth, 2400) // all of the settings, unscrolled
 	h.key(ui.Cmd, ui.KeyComma)
-	label, ok := h.tt.Find("Allow screen capture")
-	if !ok {
-		t.Fatalf("no setting in %q", h.tt.Texts())
-	}
-	h.tt.ClickAt(windowWidth-28-18, label.Y+17)
-	h.settle()
+	h.flip("Allow screen capture")
 	if !h.a.cfg.AllowScreenCapture || applied != 1 {
 		t.Fatalf("allowed %v, applied %d times", h.a.cfg.AllowScreenCapture, applied)
 	}

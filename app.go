@@ -78,6 +78,10 @@ type system interface {
 	scrollPhase() (phase, momentum macos.Phase)
 	// secureInput turns Secure Event Input on or off (macos.SecureInput).
 	secureInput(on bool)
+	// openAtLogin reports whether the app opens as the user logs in, and
+	// setOpenAtLogin makes it, or stops it: a login item of macOS's.
+	openAtLogin() bool
+	setOpenAtLogin(on bool) error
 }
 
 // sealedSecret is a secret that only Touch ID opens (macos.Sealed).
@@ -300,6 +304,8 @@ type app struct {
 	rec      *recorder
 	keyErr   string
 	keyErrID string
+	// loginErr is why the app couldn't open at login, or stop to.
+	loginErr string
 
 	// exit quits the app, and relaunch restarts it.
 	exit     func()
