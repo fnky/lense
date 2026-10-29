@@ -221,7 +221,30 @@ func (a *app) openSettings() {
 	}
 	a.rec, a.keyErr = nil, ""
 	a.page = pageSettings
+	a.readLoginItem()
 }
+
+// readLoginItem reads whether the app opens at login, as macOS has it,
+// for the settings, in the background.
+func (a *app) readLoginItem() {
+	a.spawn(func() {
+		on := a.sys.openAtLogin()
+		a.post(func() { a.atLogin = on })
+	})
+}
+
+// trusted reports whether the app may type into others, as the settings
+// show it: macOS asked once in a while, not as each frame draws.
+func (a *app) trusted() bool {
+	if now := a.now(); a.trustAt.IsZero() || now.Sub(a.trustAt) >= trustEvery {
+		a.trust, a.trustAt = a.sys.trusted(false), now
+	}
+	return a.trust
+}
+
+// trustEvery is how often the settings ask macOS whether the app may
+// type into others, which it may be let to meanwhile.
+const trustEvery = 2 * time.Second
 
 // iconButton is a borderless button showing an icon, which a tooltip
 // names: buttons of a label, and rows, say what they are themselves.

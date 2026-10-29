@@ -133,9 +133,11 @@ type fakeSystem struct {
 	secure []bool
 
 	// atLogin is whether the app opens at login, which loginErr keeps it
-	// from changing.
-	atLogin  bool
-	loginErr error
+	// from changing; loginReads counts the times the app asked, and
+	// trustReads whether it may type into others.
+	atLogin                bool
+	loginErr               error
+	loginReads, trustReads int
 }
 
 func (s *fakeSystem) copy(text string, secret bool) {
@@ -144,7 +146,7 @@ func (s *fakeSystem) copy(text string, secret bool) {
 }
 func (s *fakeSystem) openURL(u string)  { s.opened = append(s.opened, u) }
 func (s *fakeSystem) biometrics() bool  { return s.bio }
-func (s *fakeSystem) trusted(bool) bool { return s.trust }
+func (s *fakeSystem) trusted(bool) bool { s.trustReads++; return s.trust }
 func (s *fakeSystem) show()             { s.shown++ }
 func (s *fakeSystem) hide() {
 	s.hidden++
@@ -201,7 +203,7 @@ func (s *fakeSystem) secureInput(on bool)                           { s.secure =
 func (s *fakeSystem) drag(p dragPhase)                              { s.drags = append(s.drags, p) }
 func (s *fakeSystem) scrollPhase() (macos.Phase, macos.Phase)       { return s.phase, s.momentum }
 
-func (s *fakeSystem) openAtLogin() bool { return s.atLogin }
+func (s *fakeSystem) openAtLogin() bool { s.loginReads++; return s.atLogin }
 
 func (s *fakeSystem) setOpenAtLogin(on bool) error {
 	if s.loginErr != nil {
@@ -902,6 +904,16 @@ func TestSettings(t *testing.T) {
 	h.has("Settings", "Lock when idle", "Unlock with Touch ID", "Clear copied secrets", "⇧⌘Space", "Accessibility access",
 		"Keyboard shortcuts", "Copy the username", "⌘C", "⌘B", "Search My Vault")
 	snapshot(t, h.tt, "settings")
+
+	// Scrolling draws the settings anew in each frame, which ask macOS
+	// nothing it takes long to tell.
+	for i := 0; i < 10; i++ {
+		h.tt.Scroll(380, 300, 0, 20)
+		h.tt.Frame()
+	}
+	if h.sys.loginReads != 1 || h.sys.trustReads != 1 {
+		t.Errorf("asked macOS of the login item %d times, of Accessibility %d times", h.sys.loginReads, h.sys.trustReads)
+	}
 
 	// Lense opens at login as the switch says, a login item of macOS's.
 	h.has("General", "Launch Lense at login")

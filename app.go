@@ -308,8 +308,15 @@ type app struct {
 	rec      *recorder
 	keyErr   string
 	keyErrID string
-	// loginErr is why the app couldn't open at login, or stop to.
+	// atLogin is whether the app opens at login, as macOS told as the
+	// settings opened, and loginErr why it couldn't, or stop to; trust
+	// is whether it may type into others, as macOS told at trustAt. The
+	// settings show them as macOS told last: it takes too long to tell,
+	// 9 ms for the login item, for each frame to ask.
+	atLogin  bool
 	loginErr string
+	trust    bool
+	trustAt  time.Time
 
 	// exit quits the app, and relaunch restarts it.
 	exit     func()

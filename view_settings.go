@@ -27,11 +27,11 @@ func (a *app) settingsView(c *ui.Context, k ink) {
 		ui.Column(c).Padding(18, 28, 22, 28).Gap(22).Translate(0, off).Children(func() {
 			a.softwareUpdateSection(c.Key("update"), k)
 			section(c, k, "General", func() {
-				atLogin := a.sys.openAtLogin()
-				switchRow(c.Key("login"), k, "Launch Lense at login", "It waits in the menu bar from then on, for its shortcut.", &atLogin, func() {
+				switchRow(c.Key("login"), k, "Launch Lense at login", "It waits in the menu bar from then on, for its shortcut.", &a.atLogin, func() {
 					a.loginErr = ""
-					if err := a.sys.setOpenAtLogin(atLogin); err != nil {
+					if err := a.sys.setOpenAtLogin(a.atLogin); err != nil {
 						a.loginErr = "macOS didn't let Lense change its login items: " + err.Error()
+						a.readLoginItem() // as it has it still
 					}
 				})
 				if a.loginErr != "" {
@@ -132,7 +132,7 @@ func (a *app) settingsView(c *ui.Context, k ink) {
 				})
 			})
 			section(c, k, "Filling", func() {
-				trusted := a.sys.trusted(false)
+				trusted := a.trusted()
 				detail := fmt.Sprintf("%s types your username and password into the page you came from, when it's one of the login's websites, or into the app; elsewhere, and with %s, into the website it opens.",
 					a.cfg.keyHint("default"), a.cfg.keyHint("open-fill"))
 				settingRow(c, k, "Accessibility access", detail, func() {
@@ -149,7 +149,7 @@ func (a *app) settingsView(c *ui.Context, k ink) {
 					})
 				})
 				if !trusted {
-					c.After(2 * time.Second) // notice as it's allowed
+					c.After(trustEvery) // notice as it's allowed
 				}
 				a.uriMatchRow(c, k)
 				switchRow(c.Key("totp"), k, "Copy the one-time password", "After filling a login that has one, for the page that asks for it next.", &a.cfg.CopyTOTP, a.changed)
