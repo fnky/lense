@@ -4,6 +4,22 @@ All notable changes to Lense are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## 0.4.0 - 2026-11-10
+
+### Added
+
+- Lense fills the browser pane of the Claude app as it fills a browser: it
+  suggests the logins of the page the pane shows, and ↩ fills its login form.
+  It never fills a field of Claude's own, as its chat or the pane's address
+  field, nor a form in a frame of the page. The first time after Claude
+  starts, its page takes a couple of seconds to show to Lense.
+
+### Changed
+
+- In the Claude app, ↩ on a login without a website no longer types it into
+  the field that has the keyboard focus: Lense copies its password, as in a
+  browser.
+
 ## 0.3.0 - 2026-10-29
 
 ### Added
