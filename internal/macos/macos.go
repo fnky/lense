@@ -3,6 +3,7 @@ package macos
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // App is a running app.
@@ -111,7 +112,9 @@ const BitwardenBundleID = "com.bitwarden.desktop"
 // apps control the computer.
 const AccessibilitySettingsURL = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
 
-// browsers are the browsers whose address AppleScript tells, and how.
+// browsers are the browsers, and how they tell the address of the page they
+// show: AppleScript of Safari's or Chrome's, "ax" accessibility, or "" not
+// at all.
 var browsers = map[string]string{
 	"com.apple.Safari":                    "safari",
 	"com.apple.SafariTechnologyPreview":   "safari",
@@ -133,6 +136,25 @@ var browsers = map[string]string{
 	"org.mozilla.firefoxdeveloperedition": "",
 	"app.zen-browser.zen":                 "",
 	"com.kagi.kagimacOS":                  "safari",
+	"com.anthropic.claudefordesktop":      "ax", // Claude's browser pane
+}
+
+// ownPages are the addresses of the pages that apps show as their own
+// interface, beside the pages of their browser, by app: no website's, and
+// so none that Lense suggests logins for or fills.
+var ownPages = map[string][]string{
+	"com.anthropic.claudefordesktop": {"file://", "https://claude.ai/"},
+}
+
+// ownPage reports whether the page at u is the app's own interface, of
+// bundleID.
+func ownPage(bundleID, u string) bool {
+	for _, p := range ownPages[bundleID] {
+		if strings.HasPrefix(u, p) || u+"/" == p {
+			return true
+		}
+	}
+	return false
 }
 
 // IsBrowser reports whether the app of bundleID is a web browser.

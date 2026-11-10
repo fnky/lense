@@ -131,24 +131,42 @@ func (e *Element) PageURL() string {
 	}
 	u := ""
 	withPool(func() {
-		web := pageOf(e.ref)
-		if web == 0 {
-			return
-		}
-		defer cfRelease(web)
-		v := copyAttr(web, "AXURL")
-		if v == 0 {
-			return
-		}
-		defer cfRelease(v)
-		switch {
-		case objc.Send[bool](objc.ID(v), sel("isKindOfClass:"), class("NSURL")):
-			u = goString(objc.ID(v).Send(sel("absoluteString")))
-		case objc.Send[bool](objc.ID(v), sel("isKindOfClass:"), class("NSString")):
-			u = goString(objc.ID(v))
+		if web := pageOf(e.ref); web != 0 {
+			u = urlOf(web)
+			cfRelease(web)
 		}
 	})
 	return u
+}
+
+// urlOf returns the address of a web page, or "".
+func urlOf(web uintptr) string {
+	v := copyAttr(web, "AXURL")
+	if v == 0 {
+		return ""
+	}
+	defer cfRelease(v)
+	switch {
+	case objc.Send[bool](objc.ID(v), sel("isKindOfClass:"), class("NSURL")):
+		return goString(objc.ID(v).Send(sel("absoluteString")))
+	case objc.Send[bool](objc.ID(v), sel("isKindOfClass:"), class("NSString")):
+		return goString(objc.ID(v))
+	}
+	return ""
+}
+
+// ownPagesOf returns whether a page is the app of pid's own interface
+// (ownPages).
+func ownPagesOf(pid int) func(web uintptr) bool {
+	ra := class("NSRunningApplication").Send(sel("runningApplicationWithProcessIdentifier:"), int32(pid))
+	if ra == 0 {
+		return func(uintptr) bool { return false }
+	}
+	id := goString(ra.Send(sel("bundleIdentifier")))
+	if ownPages[id] == nil {
+		return func(uintptr) bool { return false }
+	}
+	return func(web uintptr) bool { return ownPage(id, urlOf(web)) }
 }
 
 // SetValue puts text into e at once, as accessibility sets a value,
@@ -293,20 +311,32 @@ func topPageOf(el uintptr) uintptr {
 
 // shownPage returns the web page the app's focused window shows,
 // retained, or 0: the page of the element with the focus, that its frame
-// is on for one in a frame, else the first a few levels into the window.
+// is on for one in a frame, else the first a few levels into the window;
+// never the app's own interface (ownPages), as Claude's beside its
+// browser.
 func shownPage(pid int) uintptr {
 	app := axCreateApplication(int32(pid))
 	if app == 0 {
 		return 0
 	}
 	defer cfRelease(app)
+	own := ownPagesOf(pid)
 	if el := copyAttr(app, "AXFocusedUIElement"); el != 0 {
 		web := topPageOf(el)
 		cfRelease(el)
-		if web != 0 {
+		if web != 0 && !own(web) {
 			return web
 		}
+		if web != 0 {
+			cfRelease(web)
+		}
 	}
+	return windowPage(app, own)
+}
+
+// windowPage returns the first web page a few levels into the app's
+// focused window, retained, or 0, but for the app's own (own).
+func windowPage(app uintptr, own func(web uintptr) bool) uintptr {
 	win := copyAttr(app, "AXFocusedWindow")
 	if win == 0 {
 		return 0
@@ -321,7 +351,11 @@ func shownPage(pid int) uintptr {
 		el := queue[0]
 		queue = queue[1:]
 		if stringAttr(el, "AXRole") == "AXWebArea" {
-			return el
+			if !own(el) {
+				return el
+			}
+			cfRelease(el) // the app's own: no page, nor any in it
+			continue
 		}
 		queue = append(queue, children(el)...)
 		cfRelease(el)
@@ -347,6 +381,10 @@ func Fields(pid int, near *Element) []*Element {
 		web := uintptr(0)
 		if near != nil {
 			web = topPageOf(near.ref)
+		}
+		if web != 0 && ownPagesOf(pid)(web) {
+			cfRelease(web) // near is in the app's own interface
+			web = 0
 		}
 		if web == 0 {
 			web = shownPage(pid)
@@ -406,7 +444,25 @@ func (e *Element) Info() FieldInfo {
 	})
 	n := e.pages()
 	info.OnPage, info.InFrame = n > 0, n > 1
+	if info.OnPage && e.ownPage() {
+		// The app's own interface, as Claude's beside its browser: no
+		// page's field, as a browser's address field isn't.
+		info.OnPage, info.InFrame = false, false
+	}
 	return info
+}
+
+// ownPage reports whether e is on a page of the app's own interface
+// (ownPages).
+func (e *Element) ownPage() bool {
+	own := false
+	withPool(func() {
+		if web := topPageOf(e.ref); web != 0 {
+			own = ownPagesOf(e.pid())(web)
+			cfRelease(web)
+		}
+	})
+	return own
 }
 
 // pid returns the process of the app e is of.

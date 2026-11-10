@@ -141,6 +141,8 @@ func BrowserURL(ctx context.Context, bundleID string) (string, error) {
 		script = `tell application id "` + bundleID + `" to get URL of front document`
 	case "chrome":
 		script = `tell application id "` + bundleID + `" to get URL of active tab of front window`
+	case "ax":
+		return shownPageURL(ctx, bundleID)
 	default:
 		return "", errors.New("macos: the browser does not tell its address")
 	}
@@ -151,6 +153,38 @@ func BrowserURL(ctx context.Context, bundleID string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+// shownPageURL returns the address of the page the app of bundleID shows,
+// as accessibility tells it: an Electron app tells it a while after it's
+// asked to (EnableWebAccessibility), which it waits for as long as ctx
+// lets it.
+func shownPageURL(ctx context.Context, bundleID string) (string, error) {
+	if load() != nil {
+		return "", errors.New("macos: no accessibility")
+	}
+	for {
+		u := ""
+		withPool(func() {
+			apps := class("NSRunningApplication").Send(sel("runningApplicationsWithBundleIdentifier:"), nsString(bundleID))
+			if objc.Send[uint](apps, sel("count")) == 0 {
+				return
+			}
+			pid := int(objc.Send[int32](apps.Send(sel("objectAtIndex:"), 0), sel("processIdentifier")))
+			if web := shownPage(pid); web != 0 {
+				u = urlOf(web)
+				cfRelease(web)
+			}
+		})
+		if u != "" {
+			return u, nil
+		}
+		select {
+		case <-ctx.Done():
+			return "", errors.New("macos: the browser shows no page")
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
 }
 
 // OwnPID is this app's process.

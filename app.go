@@ -1787,7 +1787,9 @@ func (a *app) setFront(app macos.App) {
 		return
 	}
 	a.spawn(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		// An Electron app, as Claude's browser, tells its page 2 seconds
+		// after it's first asked to.
+		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 		defer cancel()
 		u := a.sys.pageURL(ctx, app)
 		cards, identities := a.sys.pageForms(app)

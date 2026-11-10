@@ -179,12 +179,15 @@ Filters combine with words and with each other, and complete as you type `=`.
   code; an identity's name, address, state and country, as their codes, and
   the rest; a menu, as of a month, Lense opens as you would, and chooses
   its option, as the extension picks it.
-  Those it fills only on the page you came from. An app's own fields,
+  Those it fills only on the page you came from. The browser pane of the
+  Claude app Lense fills as a browser: the page it shows, never a field of
+  Claude's own, as its chat or the pane's address. An app's own fields,
   which tell less, Lense types into: the one with the keyboard focus, then,
   with Tab, the password's. It checks that each field took what it was
   given before it goes on to the next.
 - **Automation** of your browser, to read the page it shows, for suggestions.
-  Safari and Chromium browsers tell it; Firefox doesn't.
+  Safari and Chromium browsers tell it; Firefox doesn't. Claude's browser
+  pane tells it through Accessibility instead.
 
 ## Security
 
